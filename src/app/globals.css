@@ -1,0 +1,174 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --shopify-green: #008060;
+    --shopify-green-hover: #004c3f;
+    --shopify-green-light: #f0f7f5;
+    --shopify-green-border: #bbf0dc;
+    --shopify-black: #1a1a1a;
+    --shopify-surface: #f6f6f7;
+    --shopify-card: #ffffff;
+    --shopify-border: #e1e3e5;
+    --shopify-text: #202223;
+    --shopify-muted: #6d7175;
+  }
+
+  body {
+    background-color: #f6f6f7;
+    color: #202223;
+    font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, Helvetica, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.home-grid {
+  background-image: linear-gradient(rgba(31, 67, 47, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 67, 47, 0.045) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 82%);
+}
+
+.home-rise {
+  animation: home-rise-in 650ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.home-delay-1 {
+  animation-delay: 120ms;
+}
+
+@keyframes home-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-rise {
+    animation: none;
+  }
+}
+
+.customer-start-page h1,
+.customer-start-page .customer-start-panel h2 {
+  font-family: Georgia, Cambria, "Times New Roman", serif;
+  letter-spacing: 0;
+}
+
+.customer-start-page .customer-start-panel {
+  border-color: #dfe4dc;
+}
+
+.customer-start-page input:not([type="checkbox"]):not([type="radio"]),
+.customer-start-page textarea,
+.customer-start-page select {
+  min-height: 42px;
+  border-color: #dfe4dc;
+  border-radius: 8px;
+  color: #17211d;
+}
+
+.customer-start-page input:focus,
+.customer-start-page textarea:focus,
+.customer-start-page select:focus {
+  border-color: #16845f;
+  outline: 2px solid rgb(22 132 95 / 18%);
+  outline-offset: 1px;
+}
+
+.customer-start-page input[type="checkbox"],
+.customer-start-page input[type="radio"] {
+  accent-color: #16845f;
+}
+
+.customer-start-page [class~="bg-[#008060]"] {
+  background-color: #16845f !important;
+}
+
+.customer-start-page [class~="hover:bg-[#004c3f]"]:hover {
+  background-color: #0c6347 !important;
+}
+
+.customer-start-page [class~="text-[#008060]"] {
+  color: #16845f !important;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Safe area insets for mobile standalone PWA */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+html[data-admin-theme="dark"] body {
+  background-color: #111713;
+  color: #e7eee9;
+}
+
+html[data-admin-theme="dark"] .admin-portal {
+  background-color: #111713;
+  color: #e7eee9;
+}
+
+html[data-admin-theme="dark"] .admin-portal [class~="bg-white"]:not([class~="rounded-full"]),
+html[data-admin-theme="dark"] .admin-portal button[class~="bg-white"],
+html[data-admin-theme="dark"] .admin-portal [class*="bg-[#fafafa]"],
+html[data-admin-theme="dark"] .admin-portal [class*="bg-[#f6f6f7]"],
+html[data-admin-theme="dark"] .admin-portal [class*="bg-[#f5f5f5]"] {
+  background-color: #1b231e !important;
+}
+
+html[data-admin-theme="dark"] .admin-portal [class~="text-[#202223]"],
+html[data-admin-theme="dark"] .admin-portal [class~="text-[#3b3f45]"],
+html[data-admin-theme="dark"] .admin-portal [class~="text-[#5b5f66]"] {
+  color: #e7eee9 !important;
+}
+
+html[data-admin-theme="dark"] .admin-portal [class~="text-[#6b7280]"] {
+  color: #a5b0a8 !important;
+}
+
+html[data-admin-theme="dark"] .admin-portal [class*="border-[#e5e5e5]"],
+html[data-admin-theme="dark"] .admin-portal [class*="border-[#dfe3e8]"] {
+  border-color: #354139 !important;
+}
+
+html[data-admin-theme="dark"] .admin-portal nav a:hover,
+html[data-admin-theme="dark"] .admin-portal button:hover {
+  background-color: #28332c;
+}
+
+html[data-admin-theme="dark"] .admin-portal nav a[class*="bg-[#eaf5dd]"] {
+  background-color: #26382b !important;
+  color: #d9e8d3 !important;
+}
+
+html[data-admin-theme="dark"] .admin-portal input,
+html[data-admin-theme="dark"] .admin-portal select,
+html[data-admin-theme="dark"] .admin-portal textarea {
+  color: #e7eee9;
+  color-scheme: dark;
+}

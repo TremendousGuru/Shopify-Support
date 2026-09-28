@@ -1,0 +1,259 @@
+import { NextResponse } from "next/server";
+import { db } from "@/db";
+import {
+  users,
+  customers,
+  stores,
+  agents,
+  tickets,
+  conversations,
+  consentRecords,
+  notificationPreferences,
+} from "@/db/schema";
+import { and, asc, eq } from "drizzle-orm";
+import { randomInt } from "node:crypto";
+import { hashPassword, generateCustomerCode, createSession } from "@/lib/auth";
+import { verifyAgentSignupToken } from "@/lib/agent-links";
+import { sendNotification } from "@/lib/notifications";
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const {
+      email,
+      password,
+      fullName,
+      businessName,
+      phone,
+      websiteUrl,
+      storeName,
+      storeUrl,
+      storeCategory,
+      businessStage,
+      primaryGoals,
+      termsAccepted,
+      privacyPolicyAccepted,
+      supportPolicyAccepted,
+      marketingConsent,
+      existingTicketNumber,
+      agentToken: requestedAgentToken,
+    } = body;
+
+    if (!email || !password || !fullName || !businessName || !storeUrl) {
+      return NextResponse.json(
+        { error: "Missing required onboarding information" },
+        { status: 400 }
+      );
+    }
+
+    if (String(password).length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    }
+
+    if (!termsAccepted || !privacyPolicyAccepted || !supportPolicyAccepted) {
+      return NextResponse.json(
+        { error: "You must accept the Terms, Privacy Notice, and support communications policy." },
+        { status: 400 }
+      );
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanTicketNumber = String(existingTicketNumber || "").trim().toUpperCase();
+    const agentCode = requestedAgentToken
+      ? verifyAgentSignupToken(String(requestedAgentToken))
+      : null;
+
+    if (requestedAgentToken && !agentCode) {
+      return NextResponse.json({ error: "This agent signup link is invalid" }, { status: 400 });
+    }
+
+    if (cleanTicketNumber.length > 64) {
+      return NextResponse.json({ error: "Ticket number must be 64 characters or fewer" }, { status: 400 });
+    }
+
+    const [existing] = await db.select().from(users).where(eq(users.email, cleanEmail)).limit(1);
+    if (existing) {
+      return NextResponse.json(
+        { error: "An account with this email already exists. Please log in instead." },
+        { status: 409 }
+      );
+    }
+
+    const agentQuery = db
+      .select({
+        id: agents.id,
+        userId: agents.userId,
+        agentCode: agents.agentCode,
+      })
+      .from(agents)
+      .innerJoin(users, eq(agents.userId, users.id))
+      .where(agentCode
+        ? and(eq(agents.agentCode, agentCode), eq(users.isActive, true))
+        : and(eq(agents.status, "Available"), eq(users.isActive, true)))
+      .orderBy(asc(agents.agentCode))
+      .limit(1);
+    const [assignedAgent] = await agentQuery;
+
+    if (!assignedAgent) {
+      return NextResponse.json(
+        { error: agentCode ? "This agent link is no longer active" : "No support agents are currently available" },
+        { status: 409 }
+      );
+    }
+
+    let ticketCode = cleanTicketNumber;
+    if (ticketCode) {
+      const [existingTicket] = await db
+        .select({ id: tickets.id })
+        .from(tickets)
+        .where(eq(tickets.ticketCode, ticketCode))
+        .limit(1);
+      if (existingTicket) {
+        return NextResponse.json(
+          { error: "That ticket number is already in use. Sign in to the account associated with it or contact support." },
+          { status: 409 }
+        );
+      }
+    } else {
+      ticketCode = `TKT-${randomInt(100000, 1000000)}`;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const [existingTicket] = await db
+          .select({ id: tickets.id })
+          .from(tickets)
+          .where(eq(tickets.ticketCode, ticketCode))
+          .limit(1);
+        if (!existingTicket) break;
+        ticketCode = `TKT-${randomInt(100000, 1000000)}`;
+      }
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [newUser] = await tx
+        .insert(users)
+        .values({
+          email: cleanEmail,
+          passwordHash: hashPassword(password),
+          fullName: fullName.trim(),
+          role: "customer",
+          phone: phone?.trim() || null,
+          isActive: true,
+          isEmailVerified: true,
+        })
+        .returning();
+
+      let customerCode = generateCustomerCode();
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const [existingCustomer] = await tx
+          .select({ id: customers.id })
+          .from(customers)
+          .where(eq(customers.customerCode, customerCode))
+          .limit(1);
+        if (!existingCustomer) break;
+        customerCode = generateCustomerCode();
+      }
+
+      const [newCustomer] = await tx
+        .insert(customers)
+        .values({
+          userId: newUser.id,
+          customerCode,
+          businessName: businessName.trim(),
+          websiteUrl: websiteUrl?.trim() || storeUrl.trim(),
+          ecommercePlatform: "Shopify",
+          storeCategory: storeCategory || "General Merchandise",
+          businessStage: businessStage || "Active Store",
+          primaryGoals: primaryGoals?.trim() || "Improve store performance & conversion",
+          supportStatus: "Activated",
+          assignedAgentId: assignedAgent.id,
+        })
+        .returning();
+
+      await tx.insert(stores).values({
+        customerId: newCustomer.id,
+        storeName: (storeName || businessName).trim(),
+        storeUrl: storeUrl.trim(),
+        platform: "Shopify",
+        niche: storeCategory || "Retail",
+        isPrimary: true,
+      });
+
+      await tx.insert(consentRecords).values({
+        userId: newUser.id,
+        termsAccepted: true,
+        privacyPolicyAccepted: true,
+        supportPolicyAccepted: true,
+        marketingConsent: Boolean(marketingConsent),
+        ipAddress: request.headers.get("x-forwarded-for") || "127.0.0.1",
+        userAgent: request.headers.get("user-agent") || "Shopify Support Client",
+      });
+
+      await tx.insert(notificationPreferences).values({
+        userId: newUser.id,
+        supportInbox: true,
+        emailSupport: true,
+        browserPush: true,
+        whatsappSupport: false,
+        marketingEmails: Boolean(marketingConsent),
+        promotionalOffers: Boolean(marketingConsent),
+      });
+
+      const initialRequest = primaryGoals?.trim() || `New Shopify support request from ${businessName.trim()}.`;
+      const [newTicket] = await tx
+        .insert(tickets)
+        .values({
+          ticketCode,
+          customerId: newCustomer.id,
+          subject: `Onboarding support for ${businessName.trim()}`,
+          description: initialRequest,
+          category: "Shopify Store Support",
+          priority: "Normal",
+          status: "Open",
+          assignedAgentId: assignedAgent.id,
+        })
+        .returning();
+
+      const [conversation] = await tx
+        .insert(conversations)
+        .values({
+          type: "ticket",
+          customerId: newCustomer.id,
+          ticketId: newTicket.id,
+          assignedAgentId: assignedAgent.id,
+          subject: `Ticket ${ticketCode}: Onboarding support`,
+          isSensitive: true,
+          status: "active",
+        })
+        .returning();
+
+      return { newUser, newCustomer, customerCode, newTicket, conversation };
+    });
+
+    await sendNotification({
+      userId: assignedAgent.userId,
+      type: "TICKET_UPDATED",
+      title: `New merchant assigned: ${ticketCode}`,
+      body: `${businessName.trim()} completed onboarding and started a support chat.`,
+      link: "/agent/conversations",
+    });
+
+    await createSession(result.newUser.id);
+
+    return NextResponse.json({
+      success: true,
+      customerCode: result.customerCode,
+      ticketCode: result.newTicket.ticketCode,
+      conversationId: result.conversation.id,
+      assignedAgentCode: assignedAgent.agentCode,
+      user: {
+        id: result.newUser.id,
+        email: result.newUser.email,
+        fullName: result.newUser.fullName,
+        role: result.newUser.role,
+      },
+      customer: result.newCustomer,
+    });
+  } catch (error: any) {
+    console.error("Customer onboarding error:", error);
+    return NextResponse.json({ error: error.message || "Failed to complete onboarding" }, { status: 500 });
+  }
+}

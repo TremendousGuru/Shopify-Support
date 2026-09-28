@@ -1,0 +1,24 @@
+{
+  "name": "Shopify Support",
+  "short_name": "Shopify Support",
+  "description": "Official Shopify Merchant Support & Ecommerce Service Management Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#004c3f",
+  "theme_color": "#008060",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/shopify-bag.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/shopify-bag.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
