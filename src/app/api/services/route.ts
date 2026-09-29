@@ -2,13 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { serviceCategories, services } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
+import { getServiceCategories } from "@/lib/service-categories";
 
 export async function GET() {
   try {
-    const categories = await db
-      .select()
-      .from(serviceCategories)
-      .orderBy(asc(serviceCategories.displayOrder));
+    const categories = await getServiceCategories();
 
     const allServices = await db
       .select()

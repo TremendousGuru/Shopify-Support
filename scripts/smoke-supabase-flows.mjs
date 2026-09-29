@@ -78,6 +78,7 @@ try {
   const loginResponse = await postJson("/api/auth/login", {
     email: customerEmail,
     password: customerPassword,
+    portal: "/customer",
   });
   const loginData = await loginResponse.json();
   if (!loginResponse.ok) throw new Error(`Customer login failed with HTTP ${loginResponse.status}`);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { notifications } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function GET() {
@@ -47,7 +47,7 @@ export async function PATCH(request: Request) {
       await db
         .update(notifications)
         .set({ isRead: true })
-        .where(eq(notifications.id, notificationId));
+        .where(and(eq(notifications.id, notificationId), eq(notifications.userId, user.id)));
       return NextResponse.json({ success: true });
     }
 

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { serviceCategories, services } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { getServiceCategories } from "@/lib/service-categories";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
-  const categories = await db.select().from(serviceCategories).orderBy(asc(serviceCategories.displayOrder));
+  const categories = await getServiceCategories();
   const allServices = await db.select().from(services).orderBy(asc(services.displayOrder));
 
   return NextResponse.json({
@@ -21,21 +22,29 @@ export async function GET() {
       services: allServices.filter((service) => service.categoryId === category.id),
     })),
     services: allServices,
+    canManage: user.role === "system_admin",
   });
 }
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
-  if (!user || !["system_admin", "support_supervisor"].includes(user.role)) {
+  if (!user || user.role !== "system_admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
   const body = await request.json();
   const { categoryId, name, shortDescription, fullDescription, startingPrice, estimatedDays, features } = body;
 
-  if (!categoryId || !name || !shortDescription) {
+  if (!categoryId || !name?.trim() || !shortDescription?.trim()) {
     return NextResponse.json({ error: "Category, name, and short description are required" }, { status: 400 });
   }
+
+  const price = Number(startingPrice);
+  if (!Number.isFinite(price) || price < 0 || !Number.isInteger(price)) {
+    return NextResponse.json({ error: "Starting price must be a non-negative whole number" }, { status: 400 });
+  }
+  const [category] = await db.select({ id: serviceCategories.id }).from(serviceCategories).where(eq(serviceCategories.id, categoryId)).limit(1);
+  if (!category) return NextResponse.json({ error: "Choose a valid service category" }, { status: 400 });
 
   const [created] = await db
     .insert(services)
@@ -45,7 +54,7 @@ export async function POST(request: Request) {
       name,
       shortDescription,
       fullDescription: fullDescription || shortDescription,
-      startingPrice: Number(startingPrice || 0),
+      startingPrice: price,
       estimatedDays: estimatedDays || "2-4 days",
       features: features ? JSON.stringify(features.split(",").map((item: string) => item.trim()).filter(Boolean)) : JSON.stringify([]),
       isActive: true,
@@ -58,7 +67,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const user = await getCurrentUser();
-  if (!user || !["system_admin", "support_supervisor"].includes(user.role)) {
+  if (!user || user.role !== "system_admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
@@ -100,7 +109,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   const user = await getCurrentUser();
-  if (!user || !["system_admin", "support_supervisor"].includes(user.role)) {
+  if (!user || user.role !== "system_admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 

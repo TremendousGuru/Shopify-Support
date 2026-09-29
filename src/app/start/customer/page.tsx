@@ -153,6 +153,7 @@ export default function CustomerStartPage() {
         body: JSON.stringify({
           email: loginEmail,
           password: loginPassword,
+          portal: "/customer",
         }),
       });
 

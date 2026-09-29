@@ -6,16 +6,41 @@ import Link from "next/link";
 
 export default function AdminTicketsPage() {
   const [tickets, setTickets] = useState<any[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [canReassign, setCanReassign] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchTickets = async () => {
+    const response = await fetch("/api/tickets");
+    const data = await response.json();
+    if (response.ok && data.tickets) setTickets(data.tickets);
+    if (response.ok) setCanReassign(data.canReassign === true);
+  };
 
   useEffect(() => {
-    fetch("/api/tickets")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.tickets) setTickets(data.tickets);
-      })
-      .finally(() => setLoading(false));
+    void Promise.resolve().then(() =>
+      Promise.all([fetchTickets(), fetch("/api/admin/agents").then((res) => res.json())])
+        .then(([, data]) => setAgents((data.agents || []).filter((agent: any) => agent.status !== "Terminated" && agent.user?.isActive)))
+        .finally(() => setLoading(false))
+    );
   }, []);
+
+  const handleAssignmentChange = async (ticketId: string, assignedAgentId: string) => {
+    setError(null);
+    try {
+      const response = await fetch("/api/tickets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId, assignedAgentId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not reassign ticket");
+      await fetchTickets();
+    } catch (assignmentError: any) {
+      setError(assignmentError.message);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -28,6 +53,8 @@ export default function AdminTicketsPage() {
           Global platform tickets overview, priority tracking, and resolution monitoring.
         </p>
       </div>
+
+      {error && <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-xs text-red-200">{error}</div>}
 
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
         <table className="w-full text-left text-xs text-slate-300">
@@ -72,7 +99,20 @@ export default function AdminTicketsPage() {
                   </span>
                 </td>
                 <td className="p-3.5 text-slate-400">
-                  {t.assignedAgent ? `${t.assignedAgent.fullName} (${t.assignedAgent.agentCode})` : "Unassigned"}
+                  <select
+                    value={t.assignedAgentId || ""}
+                    disabled={!canReassign}
+                    onChange={(event) => handleAssignmentChange(t.id, event.target.value)}
+                    aria-label={`Assign ${t.ticketCode}`}
+                    className="max-w-52 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+                  >
+                    <option value="">Unassigned</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.user?.fullName} ({agent.agentCode})
+                      </option>
+                    ))}
+                  </select>
                 </td>
               </tr>
             ))}

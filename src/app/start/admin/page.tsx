@@ -32,6 +32,7 @@ export default function AdminStartPage() {
         body: JSON.stringify({
           email: loginEmail,
           password: loginPassword,
+          portal: "/admin",
         }),
       });
 

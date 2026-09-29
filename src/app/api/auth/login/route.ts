@@ -3,14 +3,15 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { verifyPassword, createSession, getCurrentUser, destroySession } from "@/lib/auth";
+import { getPortalHomeForRole } from "@/lib/portal-access";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password } = body;
+    const { email, password, portal: expectedPortal } = body;
 
-    if (!email || typeof password !== "string" || !password) {
-      return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
+    if (!email || typeof password !== "string" || !password || !["/admin", "/agent", "/customer"].includes(expectedPortal)) {
+      return NextResponse.json({ error: "Email, password, and a valid portal are required" }, { status: 400 });
     }
 
     const [user] = await db
@@ -32,9 +33,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
 
-    await createSession(user.id);
+    const portal = getPortalHomeForRole(user.role);
+    if (expectedPortal && portal !== expectedPortal) {
+      return NextResponse.json({ error: "These credentials are not valid for this portal" }, { status: 403 });
+    }
 
-    const portal = user.role === "customer" ? "/customer" : user.role === "agent" ? "/agent" : user.role.startsWith("system_") || user.role === "support_supervisor" || user.role === "data_privacy_admin" ? "/admin" : "/";
+    await createSession(user.id);
 
     return NextResponse.json({
       success: true,

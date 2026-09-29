@@ -16,6 +16,7 @@ import {
 export default function AdminAgentsPage() {
   const [agentsList, setAgentsList] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
+  const [canManageAgents, setCanManageAgents] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Invite modal
@@ -35,6 +36,7 @@ export default function AdminAgentsPage() {
       const data = await res.json();
       if (data.agents) setAgentsList(data.agents);
       if (data.invitations) setInvites(data.invitations);
+      setCanManageAgents(data.canManageAgents === true);
     } catch (e) {
       console.error(e);
     } finally {
@@ -43,7 +45,7 @@ export default function AdminAgentsPage() {
   };
 
   useEffect(() => {
-    fetchAgentsAndInvites();
+    void Promise.resolve().then(fetchAgentsAndInvites);
   }, []);
 
   const handleCreateInvitation = async (e: React.FormEvent) => {
@@ -115,10 +117,12 @@ export default function AdminAgentsPage() {
 
   const handleTerminateAgent = async (agentId: string) => {
     const replacementAgentId = replacementAgentById[agentId];
-    if (!replacementAgentId) {
-      setError("Choose a replacement agent before terminating this account.");
-      return;
-    }
+    const targetAgent = agentsList.find((agent) => agent.id === agentId);
+    const replacementName = agentsList.find((agent) => agent.id === replacementAgentId)?.user?.fullName;
+    const action = replacementName
+      ? `Terminate ${targetAgent?.user?.fullName || "this agent"} and transfer their customers and work to ${replacementName}?`
+      : `Terminate ${targetAgent?.user?.fullName || "this agent"} and leave their customers and work unassigned for an administrator to reassign later?`;
+    if (!window.confirm(action)) return;
 
     setTerminatingAgentId(agentId);
     setError(null);
@@ -143,7 +147,7 @@ export default function AdminAgentsPage() {
     }
   };
 
-  const activeAgents = agentsList.filter((agent) => agent.status !== "Terminated");
+  const activeAgents = agentsList.filter((agent) => agent.status !== "Terminated" && agent.user?.isActive);
 
   return (
     <div className="space-y-6">
@@ -158,7 +162,7 @@ export default function AdminAgentsPage() {
           </p>
         </div>
 
-        <button
+        {canManageAgents && <button
           onClick={() => {
             setShowInviteModal(true);
             setCreatedInviteUrl(null);
@@ -167,13 +171,13 @@ export default function AdminAgentsPage() {
           className="bg-[#95BF47] hover:bg-[#5E8E3E] text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-xs flex items-center gap-2 self-start sm:self-auto"
         >
           <UserPlus className="w-4 h-4" /> Invite New Agent
-        </button>
+        </button>}
       </div>
 
       <div className="overflow-hidden rounded-[22px] border border-[#e5e5e5] bg-white shadow-[0_1px_0_rgba(17,24,39,0.02)]">
         <div className="p-4 border-b border-[#e5e5e5]">
           <h2 className="text-xs font-bold text-[#4a4d52] uppercase tracking-wider">
-            Active Support Specialists ({agentsList.length})
+            Active Support Specialists ({activeAgents.length})
           </h2>
         </div>
 
@@ -215,7 +219,7 @@ export default function AdminAgentsPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  {canManageAgents && <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => copyAgentSignupLink(ag.id)}
@@ -234,9 +238,9 @@ export default function AdminAgentsPage() {
                       }
                       className="w-44 rounded-lg border border-[#dfe3e8] bg-[#f6f6f7] px-2.5 py-1.5 text-[11px] text-[#202223] focus:outline-none focus:ring-2 focus:ring-[#95BF47]/30"
                     >
-                      <option value="">Select replacement</option>
+                      <option value="">Unassign work</option>
                       {agentsList
-                        .filter((agent) => agent.id !== ag.id && agent.status !== "Terminated")
+                        .filter((agent) => agent.id !== ag.id && agent.status !== "Terminated" && agent.user?.isActive)
                         .map((agent) => (
                           <option key={agent.id} value={agent.id}>
                             {agent.user?.fullName} ({agent.agentCode})
@@ -245,13 +249,13 @@ export default function AdminAgentsPage() {
                     </select>
                     <button
                       onClick={() => handleTerminateAgent(ag.id)}
-                      disabled={terminatingAgentId === ag.id || !replacementAgentById[ag.id]}
+                      disabled={terminatingAgentId === ag.id}
                       className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       {terminatingAgentId === ag.id ? "Terminating..." : "Terminate"}
                     </button>
-                  </div>
+                  </div>}
                 </div>
               </div>
             ))
@@ -316,7 +320,7 @@ export default function AdminAgentsPage() {
                       {new Date(inv.expiresAt).toLocaleString()}
                     </td>
                     <td className="p-3.5">
-                      {inv.status === "pending" && (
+                      {canManageAgents && inv.status === "pending" && (
                         <button
                           onClick={() => copyToClipboard(`/start/agent?token=${inv.token}`)}
                           className="text-blue-400 hover:underline flex items-center gap-1 font-mono text-[11px]"
@@ -326,7 +330,7 @@ export default function AdminAgentsPage() {
                       )}
                     </td>
                     <td className="p-3.5 text-right">
-                      {inv.status === "pending" && (
+                      {canManageAgents && inv.status === "pending" && (
                         <button
                           onClick={() => handleRevokeInvite(inv.id)}
                           className="text-red-400 hover:text-red-300 p-1"
@@ -345,7 +349,7 @@ export default function AdminAgentsPage() {
       </div>
 
       {/* Invite Modal */}
-      {showInviteModal && (
+      {canManageAgents && showInviteModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 text-white shadow-2xl">
             <h2 className="text-base font-bold text-white mb-1">Invite Support Specialist</h2>

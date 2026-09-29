@@ -34,7 +34,7 @@ export default function AgentTicketsPage() {
   };
 
   useEffect(() => {
-    fetchTickets();
+    void Promise.resolve().then(fetchTickets);
   }, []);
 
   const handleUpdateStatus = async (ticketId: string, status: string) => {
@@ -156,7 +156,7 @@ export default function AgentTicketsPage() {
                     </td>
                     <td className="p-3.5 text-right whitespace-nowrap">
                       <Link
-                        href="/agent/conversations"
+                        href={t.conversationId ? `/agent/conversations?conversationId=${encodeURIComponent(t.conversationId)}` : "/agent/conversations"}
                         className="text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-1"
                       >
                         <MessageSquare className="w-3.5 h-3.5" /> Reply

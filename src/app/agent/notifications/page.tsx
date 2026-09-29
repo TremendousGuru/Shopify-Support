@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   Check,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 
 export default function AgentNotificationsPage() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +32,7 @@ export default function AgentNotificationsPage() {
   };
 
   useEffect(() => {
-    fetchNotifications();
+    void Promise.resolve().then(fetchNotifications);
   }, []);
 
   const markAllRead = async () => {
@@ -40,9 +42,24 @@ export default function AgentNotificationsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ markAll: true }),
       });
-      fetchNotifications();
+      setNotifications((current) => current.map((notification) => ({ ...notification, isRead: true })));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const markAsRead = async (notificationId: string) => {
+    setNotifications((current) => current.map((notification) => notification.id === notificationId ? { ...notification, isRead: true } : notification));
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notificationId }),
+      });
+      if (!response.ok) throw new Error("Could not mark notification as read");
+    } catch (error) {
+      console.error(error);
+      void fetchNotifications();
     }
   };
 
@@ -105,6 +122,13 @@ export default function AgentNotificationsPage() {
               {n.link && (
                 <Link
                   href={n.link}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void (async () => {
+                      if (!n.isRead) await markAsRead(n.id);
+                      router.push(n.link);
+                    })();
+                  }}
                   className="text-xs font-semibold text-blue-400 hover:underline shrink-0 flex items-center gap-0.5"
                 >
                   View <ArrowRight className="w-3 h-3" />

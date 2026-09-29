@@ -47,10 +47,10 @@ export default function CustomerServiceRequestsPage() {
   };
 
   useEffect(() => {
-    fetchRequests();
+    void Promise.resolve().then(fetchRequests);
   }, []);
 
-  const handleQuoteDecision = async (requestId: string, decision: "Accepted" | "Declined") => {
+  const handleQuoteDecision = async (requestId: string, decision: "Accepted" | "Declined", quoteExpiresAt: string) => {
     setActionLoading(requestId);
     try {
       const res = await fetch("/api/service-requests", {
@@ -59,6 +59,7 @@ export default function CustomerServiceRequestsPage() {
         body: JSON.stringify({
           requestId,
           quoteStatus: decision,
+          quoteExpiresAt,
         }),
       });
       const data = await res.json();
@@ -67,6 +68,22 @@ export default function CustomerServiceRequestsPage() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReportPayment = async (orderId: string) => {
+    setActionLoading(orderId);
+    try {
+      const response = await fetch("/api/service-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, action: "report_payment" }),
+      });
+      if (response.ok) await fetchRequests();
+    } catch (error) {
+      console.error(error);
     } finally {
       setActionLoading(null);
     }
@@ -115,6 +132,7 @@ export default function CustomerServiceRequestsPage() {
         <div className="space-y-6">
           {requests.map((req) => {
             const currentStageIndex = STAGES.indexOf(req.status);
+            const quoteExpired = req.quoteExpired === true;
             return (
               <div
                 key={req.id}
@@ -153,7 +171,7 @@ export default function CustomerServiceRequestsPage() {
                     </span>
 
                     <Link
-                      href="/customer/messages"
+                      href={req.conversationId ? `/customer/messages?conversationId=${encodeURIComponent(req.conversationId)}` : "/customer/messages"}
                       className="text-xs font-semibold text-[#008060] bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition flex items-center gap-1"
                     >
                       <MessageSquare className="w-3.5 h-3.5" /> Chat with Agent
@@ -226,30 +244,54 @@ export default function CustomerServiceRequestsPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {req.quoteStatus === "Accepted" || req.status === "Approved" || req.status === "In Progress" ? (
+                        {req.order ? (
                           <div className="flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg text-xs font-bold">
                             <Check className="w-4 h-4 text-emerald-600" />
-                            Quote Approved & Work Commenced
+                            Order {req.order.orderCode} placed
                           </div>
-                        ) : (
+                        ) : req.quoteStatus === "Accepted" || req.status === "Approved" || req.status === "In Progress" ? (
+                          <div className="flex items-center gap-1.5 bg-amber-100 text-amber-800 px-3 py-1.5 rounded-lg text-xs font-bold">
+                            Quote approved
+                          </div>
+                        ) : req.quoteStatus === "Declined" ? (
+                          <div className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600">Quote declined</div>
+                        ) : quoteExpired ? (
+                          <div className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800">Quote expired</div>
+                        ) : req.quoteStatus === "Sent" && req.quoteExpiresAt ? (
                           <>
                             <button
-                              onClick={() => handleQuoteDecision(req.id, "Accepted")}
+                              onClick={() => handleQuoteDecision(req.id, "Accepted", req.quoteExpiresAt)}
                               disabled={actionLoading === req.id}
                               className="bg-[#008060] hover:bg-[#004c3f] text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-xs flex items-center gap-1"
                             >
                               <Check className="w-3.5 h-3.5" /> Approve Quote
                             </button>
                             <button
-                              onClick={() => handleQuoteDecision(req.id, "Declined")}
+                              onClick={() => handleQuoteDecision(req.id, "Declined", req.quoteExpiresAt)}
                               disabled={actionLoading === req.id}
                               className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-3 py-2 rounded-lg transition"
                             >
                               Decline
                             </button>
                           </>
+                        ) : (
+                          <div className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600">Awaiting a valid quote</div>
                         )}
                       </div>
+
+                      {req.order && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950">
+                          <div className="font-bold">Order {req.order.orderCode} · ${req.order.amount} {req.order.currency}</div>
+                          <div className="mt-1">Status: {req.order.status} · Payment: {req.order.paymentStatus}</div>
+                          {req.order.paymentStatus === "unpaid" && (
+                            <button onClick={() => handleReportPayment(req.order.id)} disabled={actionLoading === req.order.id} className="mt-3 rounded-md bg-amber-700 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+                              {actionLoading === req.order.id ? "Submitting..." : "I have paid"}
+                            </button>
+                          )}
+                          {req.order.paymentStatus === "reported" && <p className="mt-2">Payment reported; your agent must confirm it before work begins.</p>}
+                          {req.order.paymentStatus === "confirmed" && <p className="mt-2">Payment confirmed by your agent.</p>}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

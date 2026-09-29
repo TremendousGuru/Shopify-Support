@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { conversations, customers, agents, users, messages } from "@/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { conversations, customers, agents, users, messages, serviceRequests, tickets } from "@/db/schema";
+import { eq, desc, and, or, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { canAgentAccessConversation } from "@/lib/conversation-access";
 
 export async function GET(request: Request) {
   try {
@@ -20,18 +21,37 @@ export async function GET(request: Request) {
         .where(eq(conversations.customerId, user.customer.id))
         .orderBy(desc(conversations.lastMessageAt));
     } else if (user.role === "agent" && user.agent) {
+      const [assignedCustomers, assignedRequests, assignedTickets] = await Promise.all([
+        db.select({ id: customers.id }).from(customers).where(eq(customers.assignedAgentId, user.agent.id)),
+        db.select({ id: serviceRequests.id }).from(serviceRequests)
+          .where(eq(serviceRequests.assignedAgentId, user.agent.id)),
+        db.select({ id: tickets.id }).from(tickets)
+          .where(eq(tickets.assignedAgentId, user.agent.id)),
+      ]);
+      const requestIds = assignedRequests.map((row) => row.id).filter((id): id is string => !!id);
+      const ticketIds = assignedTickets.map((row) => row.id).filter((id): id is string => !!id);
+      const scope = [eq(conversations.assignedAgentId, user.agent.id)];
+      if (assignedCustomers.length) scope.push(inArray(conversations.customerId, assignedCustomers.map((customer) => customer.id)));
+      if (requestIds.length) scope.push(inArray(conversations.serviceRequestId, requestIds));
+      if (ticketIds.length) scope.push(inArray(conversations.ticketId, ticketIds));
       list = await db
         .select()
         .from(conversations)
-        .where(eq(conversations.assignedAgentId, user.agent.id))
+        .where(or(...scope)!)
         .orderBy(desc(conversations.lastMessageAt));
     } else if (["system_admin", "support_supervisor", "data_privacy_admin"].includes(user.role)) {
       list = await db.select().from(conversations).orderBy(desc(conversations.lastMessageAt));
     }
 
     // Attach last message preview and participant details
+    const accessibleConversations = user.role === "agent" && user.agent
+      ? (await Promise.all(list.map(async (conversation) => ({ conversation, allowed: await canAgentAccessConversation(user.agent!.id, conversation) }))))
+          .filter((item) => item.allowed)
+          .map((item) => item.conversation)
+      : list;
+
     const enriched = await Promise.all(
-      list.map(async (conv) => {
+      accessibleConversations.map(async (conv) => {
         const [lastMsg] = await db
           .select()
           .from(messages)

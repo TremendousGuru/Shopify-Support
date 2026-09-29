@@ -31,7 +31,7 @@ const emptyServiceForm = {
   name: "",
   shortDescription: "",
   fullDescription: "",
-  startingPrice: 0,
+  startingPrice: "0",
   estimatedDays: "2-4 days",
   features: "",
 };
@@ -39,10 +39,14 @@ const emptyServiceForm = {
 export default function AdminServicesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [proposals, setProposals] = useState<any[]>([]);
+  const [canManage, setCanManage] = useState(false);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyServiceForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const fetchCatalog = async () => {
     try {
@@ -50,6 +54,12 @@ export default function AdminServicesPage() {
       const data = await response.json();
       setCategories(data.categories || []);
       setServices(data.services || []);
+      setCanManage(data.canManage === true);
+      if (data.canManage) {
+        const proposalResponse = await fetch("/api/admin/service-proposals");
+        const proposalData = await proposalResponse.json();
+        if (proposalResponse.ok) setProposals(proposalData.proposals || []);
+      }
       if (data.categories?.[0]) {
         setForm((current) => ({ ...current, categoryId: data.categories[0].id }));
       }
@@ -61,11 +71,36 @@ export default function AdminServicesPage() {
   };
 
   useEffect(() => {
-    fetchCatalog();
+    void Promise.resolve().then(fetchCatalog);
   }, []);
+
+  const handleReviewProposal = async (proposalId: string, decision: "approve" | "reject") => {
+    setReviewingId(proposalId);
+    try {
+      const response = await fetch("/api/admin/service-proposals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposalId, decision }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not review proposal");
+      await fetchCatalog();
+    } catch (error) {
+      console.error(error);
+      window.alert(error instanceof Error ? error.message : "Could not review proposal");
+    } finally {
+      setReviewingId(null);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const price = Number(form.startingPrice);
+    if (!Number.isFinite(price) || price < 0 || !Number.isInteger(price)) {
+      setFormError("Enter a valid non-negative whole-number price.");
+      return;
+    }
+    setFormError(null);
     setSaving(true);
 
     try {
@@ -76,7 +111,7 @@ export default function AdminServicesPage() {
         name: form.name,
         shortDescription: form.shortDescription,
         fullDescription: form.fullDescription,
-        startingPrice: Number(form.startingPrice || 0),
+        startingPrice: price,
         estimatedDays: form.estimatedDays,
         features: form.features,
       };
@@ -108,7 +143,7 @@ export default function AdminServicesPage() {
       name: service.name,
       shortDescription: service.shortDescription || "",
       fullDescription: service.fullDescription || "",
-      startingPrice: service.startingPrice || 0,
+      startingPrice: String(service.startingPrice ?? 0),
       estimatedDays: service.estimatedDays || "2-4 days",
       features: service.features || "",
     });
@@ -161,12 +196,15 @@ export default function AdminServicesPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+      {!canManage && <p className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-xs text-slate-400">Only a system administrator can publish or modify catalog services.</p>}
+
+      {canManage && <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-white">
           <Plus className="w-4 h-4 text-purple-400" />
           {editingId ? "Edit Service" : "Add New Service"}
         </div>
 
+        {formError && <p role="alert" className="rounded-lg border border-red-800 bg-red-950/40 px-3 py-2 text-xs text-red-200">{formError}</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-[11px] font-medium text-slate-300 mb-1">Category</label>
@@ -175,6 +213,7 @@ export default function AdminServicesPage() {
               onChange={(event) => setForm({ ...form, categoryId: event.target.value })}
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             >
+              <option value="" disabled>Select a category</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
@@ -221,8 +260,11 @@ export default function AdminServicesPage() {
             <input
               type="number"
               min={0}
+              step={1}
+              inputMode="numeric"
+              required
               value={form.startingPrice}
-              onChange={(event) => setForm({ ...form, startingPrice: Number(event.target.value) })}
+              onChange={(event) => setForm({ ...form, startingPrice: event.target.value })}
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             />
           </div>
@@ -250,7 +292,7 @@ export default function AdminServicesPage() {
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || categories.length === 0}
             className="inline-flex items-center gap-2 rounded-lg bg-[#95BF47] px-4 py-2 text-sm font-semibold text-slate-900"
           >
             <Save className="w-4 h-4" />
@@ -269,7 +311,35 @@ export default function AdminServicesPage() {
             </button>
           )}
         </div>
-      </form>
+      </form>}
+
+      {canManage && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-white">Agent proposals awaiting review</h2>
+            <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300">{proposals.filter((proposal) => proposal.status === "pending").length} pending</span>
+          </div>
+          {proposals.filter((proposal) => proposal.status === "pending").length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-700 px-4 py-6 text-center text-xs text-slate-400">No pending service proposals.</div>
+          ) : proposals.filter((proposal) => proposal.status === "pending").map((proposal) => (
+            <article key={proposal.id} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-white">{proposal.name}</div>
+                  <div className="mt-1 text-[11px] text-emerald-300">{proposal.categoryName} · submitted by {proposal.agentName} ({proposal.agentCode})</div>
+                  <p className="mt-2 text-xs text-slate-300">{proposal.shortDescription}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-xs text-slate-400">{proposal.fullDescription}</p>
+                  <div className="mt-2 text-xs text-slate-300">${proposal.startingPrice} USD · {proposal.estimatedDays}</div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button disabled={reviewingId === proposal.id} onClick={() => handleReviewProposal(proposal.id, "approve")} className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Approve and publish</button>
+                  <button disabled={reviewingId === proposal.id} onClick={() => handleReviewProposal(proposal.id, "reject")} className="rounded-md border border-red-800 px-3 py-1.5 text-xs font-semibold text-red-200 disabled:opacity-40">Reject</button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
 
       <div className="space-y-6">
         {categories.map((category) => {
@@ -312,7 +382,7 @@ export default function AdminServicesPage() {
                         <span>Turnaround: {service.estimatedDays}</span>
                       </div>
 
-                      <div className="flex gap-2 pt-2">
+                      {canManage && <div className="flex gap-2 pt-2">
                         <button
                           onClick={() => handleEdit(service)}
                           className="inline-flex items-center gap-1 rounded-md border border-slate-600 px-2 py-1 text-[10px] text-slate-200"
@@ -334,7 +404,7 @@ export default function AdminServicesPage() {
                           <Trash2 className="w-3 h-3" />
                           Remove
                         </button>
-                      </div>
+                      </div>}
                     </div>
                   ))
                 )}

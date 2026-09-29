@@ -34,7 +34,7 @@ export default function CustomerFilesPage() {
   };
 
   useEffect(() => {
-    fetchFiles();
+    void Promise.resolve().then(fetchFiles);
   }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,7 +100,7 @@ export default function CustomerFilesPage() {
         <UploadCloud className="w-10 h-10 text-[#008060] mx-auto mb-2" />
         <h2 className="text-sm font-bold text-[#202223]">Upload Screenshots & Documents</h2>
         <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
-          Supported file types: PNG, JPG, WebP, PDF, ZIP, TXT. (Maximum 15MB per file).
+          Supported file types: PNG, JPG, WebP, PDF, DOCX, ZIP, TXT. (Maximum 15MB per file).
         </p>
 
         {uploading ? (
@@ -114,7 +114,7 @@ export default function CustomerFilesPage() {
               type="file"
               onChange={handleFileUpload}
               className="hidden"
-              accept="image/*,.pdf,.zip,.txt"
+              accept="image/jpeg,image/png,image/webp,image/gif,.pdf,.docx,.zip,.txt"
             />
           </label>
         )}

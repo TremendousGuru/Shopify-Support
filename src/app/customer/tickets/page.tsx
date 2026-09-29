@@ -44,7 +44,7 @@ export default function CustomerTicketsPage() {
   };
 
   useEffect(() => {
-    fetchTickets();
+    void Promise.resolve().then(fetchTickets);
   }, []);
 
   const handleCreateTicket = async (e: React.FormEvent) => {
@@ -207,7 +207,7 @@ export default function CustomerTicketsPage() {
                   </span>
 
                   <Link
-                    href="/customer/messages"
+                    href={t.conversationId ? `/customer/messages?conversationId=${encodeURIComponent(t.conversationId)}` : "/customer/messages"}
                     className="p-2 text-gray-400 hover:text-[#008060] rounded-lg hover:bg-emerald-50 transition"
                     title="Open ticket discussion"
                   >

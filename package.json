@@ -7,6 +7,8 @@
     "start": "next start",
     "setup:push": "node scripts/setup-web-push.mjs",
     "db:push": "drizzle-kit push",
+    "db:migrate:support": "node scripts/migrate-support-schema.mjs",
+    "db:seed:shopify-services": "node scripts/seed-shopify-services.mjs",
     "test:supabase": "node scripts/smoke-supabase-flows.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"

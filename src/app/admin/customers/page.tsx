@@ -19,6 +19,7 @@ export default function AdminCustomersPage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
 
   // Privacy Checkpoint Modal State
   const [privacyModalCustomer, setPrivacyModalCustomer] = useState<any | null>(null);
@@ -50,8 +51,7 @@ export default function AdminCustomersPage() {
   };
 
   useEffect(() => {
-    fetchCustomers();
-    fetchAgents();
+    void Promise.resolve().then(() => Promise.all([fetchCustomers(), fetchAgents()]));
   }, []);
 
   const handleUpdateStatus = async (customerId: string, supportStatus: string) => {
@@ -68,15 +68,19 @@ export default function AdminCustomersPage() {
   };
 
   const handleAssignAgent = async (customerId: string, assignedAgentId: string) => {
+    setAssignmentError(null);
     try {
-      await fetch("/api/admin/customers", {
+      const response = await fetch("/api/admin/customers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customerId, assignedAgentId }),
       });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not reassign this customer.");
       fetchCustomers();
     } catch (e) {
       console.error(e);
+      setAssignmentError(e instanceof Error ? e.message : "Could not reassign this customer.");
     }
   };
 
@@ -162,6 +166,7 @@ export default function AdminCustomersPage() {
         </div>
       </div>
 
+      {assignmentError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{assignmentError}</p>}
       <div className="overflow-hidden rounded-[22px] border border-[#e5e5e5] bg-white shadow-[0_1px_0_rgba(17,24,39,0.02)]">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-[#4a4d52]">
@@ -222,7 +227,7 @@ export default function AdminCustomersPage() {
                         className="bg-[#f6f6f7] border border-[#dfe3e8] text-xs text-[#202223] rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#95BF47]/30"
                       >
                         <option value="">Unassigned</option>
-                        {agents.map((ag) => (
+                        {agents.filter((ag) => ag.status !== "Terminated" && ag.user?.isActive).map((ag) => (
                           <option key={ag.id} value={ag.id}>
                             {ag.user?.fullName} ({ag.agentCode})
                           </option>

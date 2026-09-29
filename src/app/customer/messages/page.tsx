@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import {
   MessageSquare,
   Send,
-  Paperclip,
   Check,
   CheckCheck,
   Clock,
@@ -13,29 +14,36 @@ import {
   ShieldCheck,
   RefreshCw,
   AlertCircle,
+  Search,
 } from "lucide-react";
+import { ChatAttachmentButton } from "@/components/shared/ChatAttachmentButton";
 
 export default function CustomerMessagesPage() {
+  const searchParams = useSearchParams();
+  const linkedConversationId = searchParams.get("conversationId");
+  const handledLinkId = useRef<string | null>(null);
   const [conversations, setConversations] = useState<any[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [sending, setSending] = useState<boolean>(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
   const [content, setContent] = useState<string>("");
+  const [conversationSearch, setConversationSearch] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch conversations
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       const res = await fetch("/api/conversations");
       const data = await res.json();
       if (data.conversations) {
         setConversations(data.conversations);
-        const requestedConversationId = new URLSearchParams(window.location.search).get("conversationId");
         setSelectedConvId((current) =>
           (current && data.conversations.some((conversation: any) => conversation.id === current)
             ? current
-            : data.conversations.find((conversation: any) => conversation.id === requestedConversationId)?.id)
+            : data.conversations.find((conversation: any) => conversation.id === linkedConversationId)?.id)
             || data.conversations[0]?.id
             || null
         );
@@ -45,7 +53,7 @@ export default function CustomerMessagesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [linkedConversationId]);
 
   // Fetch messages for selected conversation
   const loadMessages = async (convId: string) => {
@@ -60,13 +68,29 @@ export default function CustomerMessagesPage() {
     }
   };
 
-  useEffect(() => {
-    loadConversations();
+  const loadOrders = useCallback(async () => {
+    try {
+      const response = await fetch("/api/service-orders");
+      const data = await response.json();
+      if (data.orders) setOrders(data.orders);
+    } catch (error) {
+      console.error(error);
+    }
   }, []);
 
   useEffect(() => {
+    void Promise.resolve().then(() => Promise.all([loadConversations(), loadOrders()]));
+  }, [loadConversations, loadOrders]);
+
+  useEffect(() => {
+    if (!linkedConversationId || linkedConversationId === handledLinkId.current || !conversations.some((conversation) => conversation.id === linkedConversationId)) return;
+    handledLinkId.current = linkedConversationId;
+    void Promise.resolve().then(() => setSelectedConvId(linkedConversationId));
+  }, [linkedConversationId, conversations]);
+
+  useEffect(() => {
     if (selectedConvId) {
-      loadMessages(selectedConvId);
+      void Promise.resolve().then(() => loadMessages(selectedConvId));
       // Real-time polling interval (every 4 seconds) to ensure real-time updates
       const timer = setInterval(() => {
         loadMessages(selectedConvId);
@@ -85,7 +109,7 @@ export default function CustomerMessagesPage() {
 
     setSending(true);
     const textToSend = content;
-    setContent("");
+    setMessageError(null);
 
     try {
       const res = await fetch("/api/messages", {
@@ -98,18 +122,44 @@ export default function CustomerMessagesPage() {
       });
 
       const data = await res.json();
-      if (data.success) {
-        setMessages((prev) => [...prev, data.message]);
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || "Message could not be sent. Please try again.");
+      setContent("");
+      setMessages((prev) => [...prev, data.message]);
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     } catch (e) {
       console.error(e);
+      setMessageError(e instanceof Error ? e.message : "Message could not be sent. Please try again.");
     } finally {
       setSending(false);
     }
   };
 
+  const handleQuoteDecision = async (requestId: string, quoteStatus: "Accepted" | "Declined", quoteExpiresAt: string) => {
+    const response = await fetch("/api/service-requests", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, quoteStatus, quoteExpiresAt }),
+    });
+    const data = await response.json();
+    if (!response.ok) return;
+    if (data.order) setOrders((current) => [data.order, ...current.filter((order) => order.id !== data.order.id)]);
+    await loadMessages(selectedConvId!);
+  };
+
+  const handleReportPayment = async (orderId: string) => {
+    const response = await fetch("/api/service-orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, action: "report_payment" }),
+    });
+    if (response.ok) loadOrders();
+  };
+
   const activeConv = conversations.find((c) => c.id === selectedConvId);
+  const filteredConversations = conversations.filter((conversation) =>
+    [conversation.subject, conversation.type, conversation.lastMessage?.content]
+      .some((value) => String(value || "").toLowerCase().includes(conversationSearch.toLowerCase()))
+  );
 
   return (
     <div className="bg-white border border-[#e1e3e5] rounded-2xl shadow-sm overflow-hidden flex flex-col md:flex-row h-[calc(100vh-140px)] min-h-[500px]">
@@ -129,13 +179,20 @@ export default function CustomerMessagesPage() {
           </button>
         </div>
 
+        <label className="flex items-center gap-2 border-b border-[#e1e3e5] px-3 py-2 text-gray-400">
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          <input aria-label="Search conversations" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Search conversations" className="min-w-0 flex-1 bg-transparent text-xs text-[#202223] outline-none placeholder:text-gray-400" />
+        </label>
+
         <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
           {conversations.length === 0 ? (
             <div className="p-6 text-center text-xs text-gray-400">
               No conversations yet.
             </div>
+          ) : filteredConversations.length === 0 ? (
+            <div className="p-6 text-center text-xs text-gray-400">No conversations match your search.</div>
           ) : (
-            conversations.map((c) => {
+            filteredConversations.map((c) => {
               const isSelected = c.id === selectedConvId;
               return (
                 <button
@@ -207,6 +264,15 @@ export default function CustomerMessagesPage() {
           ) : (
             messages.map((m) => {
               const isMe = m.senderRole === "customer";
+              let attachments: any[] = [];
+              try {
+                attachments = m.attachments ? JSON.parse(m.attachments) : [];
+              } catch {
+                attachments = [];
+              }
+              const order = m.serviceRecommendation
+                ? orders.find((item) => item.serviceRequestId === m.serviceRecommendation.requestId)
+                : null;
               return (
                 <div
                   key={m.id}
@@ -225,11 +291,42 @@ export default function CustomerMessagesPage() {
                         : "bg-white text-[#202223] border border-[#e1e3e5] rounded-bl-xs"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap">{m.content}</p>
+                    {m.content && <p className="whitespace-pre-wrap">{m.content}</p>}
+                    {attachments.map((attachment) => (
+                      <a key={attachment.id} href={attachment.fileUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 underline underline-offset-2">
+                        {attachment.fileType?.startsWith("image/") ? <Image src={attachment.fileUrl} alt={attachment.fileName} width={640} height={480} unoptimized className="max-h-48 max-w-full rounded-md object-contain" /> : attachment.fileName}
+                      </a>
+                    ))}
                   </div>
 
+                  {m.serviceRecommendation && (
+                    <div className="mt-2 w-full max-w-lg rounded-lg border border-emerald-200 bg-white p-3 text-xs text-[#202223]">
+                      <div className="font-bold">Service recommendation: {m.serviceRecommendation.serviceName}</div>
+                      <div className="mt-1">Quote: ${m.serviceRecommendation.quotePrice} USD · {m.serviceRecommendation.quoteTimeline}</div>
+                      {m.serviceRecommendation.quoteTerms && <p className="mt-1 text-gray-600">{m.serviceRecommendation.quoteTerms}</p>}
+                      {m.serviceRecommendation.quoteStatus === "Sent" && m.serviceRecommendation.quoteExpiresAt && !m.serviceRecommendation.quoteExpired ? (
+                        <div className="mt-3 flex gap-2">
+                          <button onClick={() => handleQuoteDecision(m.serviceRecommendation.requestId, "Accepted", m.serviceRecommendation.quoteExpiresAt)} className="rounded-md bg-[#008060] px-3 py-1.5 font-semibold text-white">Approve and place order</button>
+                          <button onClick={() => handleQuoteDecision(m.serviceRecommendation.requestId, "Declined", m.serviceRecommendation.quoteExpiresAt)} className="rounded-md border border-gray-300 px-3 py-1.5 font-semibold">Decline</button>
+                        </div>
+                      ) : <div className="mt-2 font-semibold text-gray-600">
+                        {m.serviceRecommendation.quoteStatus === "Sent" ? "Quote expired" : `Quote ${m.serviceRecommendation.quoteStatus?.toLowerCase()}`}
+                      </div>}
+                      {order && (
+                        <div className="mt-3 border-t border-gray-100 pt-2">
+                          <div className="font-bold">Order {order.orderCode}: {order.status}</div>
+                          <div className="mt-1">Payment: {order.paymentStatus}</div>
+                          {order.paymentStatus === "unpaid" && <button onClick={() => handleReportPayment(order.id)} className="mt-2 rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white">I have paid</button>}
+                          {order.paymentStatus === "reported" && <div className="mt-2 text-amber-700">Payment reported. Waiting for your agent to confirm.</div>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-1 text-[10px] text-gray-400 mt-1 px-1">
-                    {isMe && <CheckCheck className="w-3 h-3 text-[#008060]" />}
+                    {isMe && (m.isRead
+                      ? <><CheckCheck className="w-3 h-3 text-[#008060]" /><span>Read</span></>
+                      : <><Clock className="w-3 h-3" /><span>Sent</span></>)}
                   </div>
                 </div>
               );
@@ -240,7 +337,9 @@ export default function CustomerMessagesPage() {
 
         {/* Message Input Box */}
         <div className="p-3 sm:p-4 border-t border-[#e1e3e5] bg-white">
+          {messageError && <p role="alert" className="mb-2 flex items-center gap-1.5 text-xs text-red-700"><AlertCircle className="h-3.5 w-3.5" />{messageError}</p>}
           <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+            {selectedConvId && <ChatAttachmentButton conversationId={selectedConvId} onSent={(message) => setMessages((current) => [...current, message])} disabled={sending} />}
             <div className="flex-1 bg-gray-50 border border-[#e1e3e5] rounded-xl focus-within:border-[#008060] focus-within:ring-1 focus-within:ring-[#008060] p-2">
               <textarea
                 value={content}

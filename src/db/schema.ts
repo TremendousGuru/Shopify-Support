@@ -1,5 +1,9 @@
-import { pgTable, uuid, text, timestamp, boolean, integer } from "drizzle-orm/pg-core";
+import { customType, pgTable, uuid, text, timestamp, boolean, integer } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
 
 // 1. Users Table
 export const users = pgTable("users", {
@@ -96,6 +100,23 @@ export const services = pgTable("services", {
   displayOrder: integer("display_order").default(0).notNull(),
 });
 
+export const serviceProposals = pgTable("service_proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  submittedByAgentId: uuid("submitted_by_agent_id").references(() => agents.id).notNull(),
+  categoryId: uuid("category_id").references(() => serviceCategories.id).notNull(),
+  name: text("name").notNull(),
+  shortDescription: text("short_description").notNull(),
+  fullDescription: text("full_description").notNull(),
+  startingPrice: integer("starting_price").notNull(),
+  estimatedDays: text("estimated_days").notNull(),
+  features: text("features").notNull().default("[]"),
+  status: text("status").notNull().default("pending"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewNote: text("review_note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // 8. Service Requests Table
 export const serviceRequests = pgTable("service_requests", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -114,6 +135,26 @@ export const serviceRequests = pgTable("service_requests", {
   quoteTerms: text("quote_terms"),
   quoteStatus: text("quote_status"), // 'Draft', 'Sent', 'Accepted', 'Declined'
   quoteExpiresAt: timestamp("quote_expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const serviceOrders = pgTable("service_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orderCode: text("order_code").notNull().unique(),
+  serviceRequestId: uuid("service_request_id").references(() => serviceRequests.id, { onDelete: "cascade" }).notNull().unique(),
+  customerId: uuid("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
+  serviceId: uuid("service_id").references(() => services.id).notNull(),
+  assignedAgentId: uuid("assigned_agent_id").references(() => agents.id),
+  serviceName: text("service_name").notNull(),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  status: text("status").notNull().default("Awaiting Payment"),
+  paymentStatus: text("payment_status").notNull().default("unpaid"),
+  paymentReportedAt: timestamp("payment_reported_at"),
+  paymentConfirmedAt: timestamp("payment_confirmed_at"),
+  paymentConfirmedBy: uuid("payment_confirmed_by").references(() => users.id),
+  workStartedAt: timestamp("work_started_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -153,6 +194,7 @@ export const conversations = pgTable("conversations", {
 export const messages = pgTable("messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "cascade" }).notNull(),
+  serviceRequestId: uuid("service_request_id").references(() => serviceRequests.id, { onDelete: "set null" }),
   senderId: uuid("sender_id").references(() => users.id).notNull(),
   senderRole: text("sender_role").notNull(), // 'customer', 'agent', 'admin'
   senderName: text("sender_name").notNull(),
@@ -183,6 +225,7 @@ export const files = pgTable("files", {
   fileSize: integer("file_size").notNull(),
   fileType: text("file_type").notNull(),
   fileUrl: text("file_url").notNull(),
+  storageData: bytea("storage_data"),
   relatedType: text("related_type"), // 'ticket', 'service_request', 'conversation', 'store'
   relatedId: text("related_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

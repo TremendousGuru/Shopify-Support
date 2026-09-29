@@ -34,9 +34,9 @@ interface CustomerNavProps {
 }
 
 export function CustomerNavigation({ user, children }: CustomerNavProps) {
-  if (!user) return null;
   const pathname = usePathname();
   const router = useRouter();
+  if (!user) return null;
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { agents, users, agentInvitations, customers, tickets, serviceRequests } from "@/db/schema";
+import { agents, users, agentInvitations, customers, tickets, serviceRequests, serviceOrders, conversations } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { recordAuditLog } from "@/lib/audit";
@@ -37,6 +37,7 @@ export async function GET() {
     return NextResponse.json({
       agents: enriched,
       invitations: pendingInvites,
+      canManageAgents: user.role === "system_admin",
     });
   } catch (error: any) {
     console.error("Admin agents error:", error);
@@ -56,44 +57,62 @@ export async function DELETE(request: Request) {
     const body = await request.clone().json().catch(() => ({}));
 
     if (body.agentId) {
-      const { agentId, replacementAgentId } = body;
-
-      if (!replacementAgentId) {
-        return NextResponse.json({ error: "A replacement active agent is required" }, { status: 400 });
-      }
+      const { agentId } = body;
+      const replacementAgentId = body.replacementAgentId || null;
 
       const [targetAgent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
       if (!targetAgent) {
         return NextResponse.json({ error: "Agent not found" }, { status: 404 });
       }
 
-      const [replacementAgent] = await db
-        .select()
-        .from(agents)
-        .where(eq(agents.id, replacementAgentId))
-        .limit(1);
+      const [replacementAgent] = replacementAgentId
+        ? await db.select().from(agents).where(eq(agents.id, replacementAgentId)).limit(1)
+        : [];
+      const [replacementUser] = replacementAgent
+        ? await db.select().from(users).where(eq(users.id, replacementAgent.userId)).limit(1)
+        : [];
 
-      if (!replacementAgent || replacementAgent.id === targetAgent.id) {
+      if (
+        (replacementAgentId && (!replacementAgent || !replacementUser?.isActive || replacementAgent.status === "Terminated" || replacementAgent.id === targetAgent.id))
+      ) {
         return NextResponse.json({ error: "Choose a different active agent for reassignment" }, { status: 400 });
       }
 
-      await db
-        .update(customers)
-        .set({ assignedAgentId: replacementAgent.id, updatedAt: new Date() })
-        .where(eq(customers.assignedAgentId, targetAgent.id));
+      if (targetAgent.status === "Terminated") {
+        return NextResponse.json({ error: "This agent has already been terminated" }, { status: 409 });
+      }
 
-      await db
-        .update(tickets)
-        .set({ assignedAgentId: replacementAgent.id, updatedAt: new Date() })
-        .where(eq(tickets.assignedAgentId, targetAgent.id));
+      const nextAgentId = replacementAgent?.id || null;
 
-      await db
-        .update(serviceRequests)
-        .set({ assignedAgentId: replacementAgent.id, updatedAt: new Date() })
-        .where(eq(serviceRequests.assignedAgentId, targetAgent.id));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(customers)
+          .set({ assignedAgentId: nextAgentId, updatedAt: new Date() })
+          .where(eq(customers.assignedAgentId, targetAgent.id));
 
-      await db.update(agents).set({ status: "Terminated" }).where(eq(agents.id, targetAgent.id));
-      await db.update(users).set({ isActive: false, updatedAt: new Date() }).where(eq(users.id, targetAgent.userId));
+        await tx
+          .update(tickets)
+          .set({ assignedAgentId: nextAgentId, updatedAt: new Date() })
+          .where(eq(tickets.assignedAgentId, targetAgent.id));
+
+        await tx
+          .update(serviceRequests)
+          .set({ assignedAgentId: nextAgentId, updatedAt: new Date() })
+          .where(eq(serviceRequests.assignedAgentId, targetAgent.id));
+
+        await tx
+          .update(serviceOrders)
+          .set({ assignedAgentId: nextAgentId, updatedAt: new Date() })
+          .where(eq(serviceOrders.assignedAgentId, targetAgent.id));
+
+        await tx
+          .update(conversations)
+          .set({ assignedAgentId: nextAgentId })
+          .where(eq(conversations.assignedAgentId, targetAgent.id));
+
+        await tx.update(agents).set({ status: "Terminated" }).where(eq(agents.id, targetAgent.id));
+        await tx.update(users).set({ isActive: false, updatedAt: new Date() }).where(eq(users.id, targetAgent.userId));
+      });
 
       await recordAuditLog({
         actorId: user.id,
@@ -102,10 +121,12 @@ export async function DELETE(request: Request) {
         action: "TERMINATE_AGENT",
         targetType: "agent",
         targetId: targetAgent.id,
-        reason: `Terminated agent and reassigned active merchant and case coverage to replacement agent ${replacementAgent.id}`,
+        reason: replacementAgent
+          ? `Terminated agent and reassigned active merchant and case coverage to replacement agent ${replacementAgent.id}`
+          : "Terminated agent and left merchant and case coverage unassigned for later reassignment",
       });
 
-      return NextResponse.json({ success: true, terminatedAgentId: targetAgent.id, replacementAgentId: replacementAgent.id });
+      return NextResponse.json({ success: true, terminatedAgentId: targetAgent.id, replacementAgentId: nextAgentId });
     }
 
     if (!inviteId) {

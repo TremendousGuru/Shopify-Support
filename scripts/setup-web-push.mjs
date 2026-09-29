@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import webpush from "web-push";
 
 const envPath = resolve(process.cwd(), ".env");
+const rotateKeys = process.argv.includes("--rotate");
 if (!existsSync(envPath)) {
   throw new Error("Create .env from .env.example before setting up device notifications.");
 }
@@ -23,10 +24,10 @@ if (hasPublicKey !== hasPrivateKey) {
   throw new Error("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be configured together.");
 }
 
-const generatedKeys = hasPublicKey ? null : webpush.generateVAPIDKeys();
+const generatedKeys = rotateKeys || !hasPublicKey ? webpush.generateVAPIDKeys() : null;
 const settings = {
-  VAPID_PUBLIC_KEY: values.get("VAPID_PUBLIC_KEY") || generatedKeys.publicKey,
-  VAPID_PRIVATE_KEY: values.get("VAPID_PRIVATE_KEY") || generatedKeys.privateKey,
+  VAPID_PUBLIC_KEY: generatedKeys?.publicKey || values.get("VAPID_PUBLIC_KEY"),
+  VAPID_PRIVATE_KEY: generatedKeys?.privateKey || values.get("VAPID_PRIVATE_KEY"),
   VAPID_SUBJECT: values.get("VAPID_SUBJECT") || "mailto:admin@example.com",
 };
 
@@ -42,5 +43,5 @@ for (const [name, value] of Object.entries(settings)) {
   if (!updated.has(name)) output.push(`${name}=${value}`);
 }
 
-writeFileSync(envPath, output.join(newline), "utf8");
-console.log("Device push settings are configured in .env. The private key was not printed.");
+writeFileSync(envPath, output.join(newline), "utf8", { mode: 0o600 });
+console.log(`${rotateKeys ? "VAPID keys rotated" : "Device push settings configured"} in .env. Secret values were not printed.`);

@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
 import { files, customers } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { FolderOpen, Download, FileText, Image as ImageIcon } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,20 @@ export default async function AgentFilesPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const filesList = await db.select().from(files).orderBy(desc(files.createdAt)).limit(50);
+  const assignedCustomers = user.role === "agent" && user.agent
+    ? await db.select({ id: customers.id }).from(customers).where(eq(customers.assignedAgentId, user.agent.id))
+    : [];
+  const filesList = assignedCustomers.length
+    ? await db.select({
+      id: files.id,
+      customerId: files.customerId,
+      fileName: files.fileName,
+      fileSize: files.fileSize,
+      fileType: files.fileType,
+      fileUrl: files.fileUrl,
+      createdAt: files.createdAt,
+    }).from(files).where(inArray(files.customerId, assignedCustomers.map((customer) => customer.id))).orderBy(desc(files.createdAt)).limit(50)
+    : [];
 
   const enriched = await Promise.all(
     filesList.map(async (f) => {

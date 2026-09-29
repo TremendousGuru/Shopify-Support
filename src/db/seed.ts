@@ -4,15 +4,45 @@ import { serviceCategories, services } from "./schema";
 export async function seedDatabase() {
   console.log("Starting Shopify Support database seeding...");
 
-  // Check if categories already seeded
   const existingCategories = await db.select().from(serviceCategories);
-  if (existingCategories.length > 0) {
-    console.log("Database already seeded with categories. Skipping full duplicate seed.");
-    return;
-  }
 
   // 1. Seed Service Categories
   const categoriesData = [
+    {
+      slug: "bug-fixing",
+      name: "Bug Fixing",
+      description: "Theme, app, checkout, and storefront defect investigation and repairs.",
+      icon: "Wrench",
+      displayOrder: 1,
+    },
+    {
+      slug: "store-operations",
+      name: "Store Operational Verification",
+      description: "Verify store configuration, checkout readiness, integrations, and operational health.",
+      icon: "CheckCircle2",
+      displayOrder: 2,
+    },
+    {
+      slug: "business-schema-markup",
+      name: "Business Schema Markup",
+      description: "Business, organization, product, and local structured data for Shopify stores.",
+      icon: "SearchCheck",
+      displayOrder: 3,
+    },
+    {
+      slug: "store-redesign",
+      name: "Store Redesign",
+      description: "Full storefront redesigns, information architecture, and theme upgrades.",
+      icon: "Palette",
+      displayOrder: 4,
+    },
+    {
+      slug: "theme-customization",
+      name: "Theme Customization",
+      description: "Shopify theme sections, Liquid changes, styling, and responsive customization.",
+      icon: "Wrench",
+      displayOrder: 5,
+    },
     {
       slug: "store-transformation",
       name: "Store Transformation",
@@ -78,8 +108,12 @@ export async function seedDatabase() {
     },
   ];
 
-  const insertedCategories = await db.insert(serviceCategories).values(categoriesData).returning();
-  const categoryMap = new Map(insertedCategories.map((c) => [c.slug, c.id]));
+  const existingSlugs = new Set(existingCategories.map((category) => category.slug));
+  const missingCategories = categoriesData.filter((category) => !existingSlugs.has(category.slug));
+  const insertedCategories = missingCategories.length
+    ? await db.insert(serviceCategories).values(missingCategories).returning()
+    : [];
+  const categoryMap = new Map([...existingCategories, ...insertedCategories].map((category) => [category.slug, category.id]));
 
   // 2. Seed Services Catalog (All prompt services)
   const servicesList = [
@@ -248,11 +282,68 @@ export async function seedDatabase() {
       features: JSON.stringify(["Growth roadmap creation", "Pricing and funnel recommendations", "Offer positioning review", "Prioritized plan of action"]),
       displayOrder: 2,
     },
+    {
+      categorySlug: "store-operations",
+      slug: "shopify-store-operational-verification",
+      name: "Store Operational Verification",
+      shortDescription: "Verify storefront, checkout, shipping, payment, and key integrations before launch or after major changes.",
+      fullDescription: "A structured verification of core Shopify store operations, including test orders, checkout configuration, shipping rules, payment methods, and critical app integrations.",
+      startingPrice: 450,
+      estimatedDays: "2-3 days",
+      features: JSON.stringify(["Checkout and test-order review", "Shipping and tax configuration checks", "Payment and app integration verification", "Prioritized findings report"]),
+      displayOrder: 1,
+    },
+    {
+      categorySlug: "theme-customization",
+      slug: "shopify-theme-customization",
+      name: "Shopify Theme Customization",
+      shortDescription: "Implement tailored storefront sections, layouts, and responsive styling in your Shopify theme.",
+      fullDescription: "Customize an existing Shopify theme with reusable sections and Liquid changes while preserving responsive behavior and current store content.",
+      startingPrice: 650,
+      estimatedDays: "3-7 days",
+      features: JSON.stringify(["Custom Liquid sections", "Responsive styling", "Theme editor settings", "Cross-device QA"]),
+      displayOrder: 1,
+    },
+    {
+      categorySlug: "business-schema-markup",
+      slug: "shopify-business-schema-markup",
+      name: "Business Schema Markup",
+      shortDescription: "Add and validate structured business data for search engine understanding and eligible rich results.",
+      fullDescription: "Review existing structured data and implement appropriate organization, local business, product, and breadcrumb schema without duplicating theme or app markup.",
+      startingPrice: 500,
+      estimatedDays: "2-4 days",
+      features: JSON.stringify(["Structured data audit", "Business and organization markup", "Duplicate schema checks", "Validation report"]),
+      displayOrder: 1,
+    },
+    {
+      categorySlug: "store-redesign",
+      slug: "shopify-store-redesign-project",
+      name: "Shopify Store Redesign",
+      shortDescription: "Reshape your storefront structure and visual system around your brand and customer journey.",
+      fullDescription: "Plan and implement a Shopify redesign covering storefront hierarchy, key templates, brand styling, and responsive quality checks.",
+      startingPrice: 1850,
+      estimatedDays: "10-14 days",
+      features: JSON.stringify(["Storefront structure planning", "Theme layout redesign", "Responsive QA", "Launch handoff"]),
+      displayOrder: 1,
+    },
+    {
+      categorySlug: "bug-fixing",
+      slug: "shopify-bug-fix-service",
+      name: "Shopify Bug Fixing",
+      shortDescription: "Investigate and resolve storefront, theme, app, and checkout defects affecting store operations.",
+      fullDescription: "Reproduce reported defects, identify their root cause, implement a focused fix, and verify that the affected store flow works as expected.",
+      startingPrice: 350,
+      estimatedDays: "1-3 days",
+      features: JSON.stringify(["Issue reproduction and triage", "Theme or app troubleshooting", "Focused repair", "Regression check"]),
+      displayOrder: 1,
+    },
   ];
 
+  const existingServices = await db.select({ slug: services.slug }).from(services);
+  const existingServiceSlugs = new Set(existingServices.map((service) => service.slug));
   for (const s of servicesList) {
     const catId = categoryMap.get(s.categorySlug);
-    if (catId) {
+    if (catId && !existingServiceSlugs.has(s.slug)) {
       await db.insert(services).values({
         categoryId: catId,
         slug: s.slug,

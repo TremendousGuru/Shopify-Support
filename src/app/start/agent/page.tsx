@@ -50,7 +50,7 @@ function AgentStartContent() {
     }
   }, [token]);
 
-  const verifyInvitationToken = async (tok: string) => {
+  async function verifyInvitationToken(tok: string) {
     if (!tok.trim()) return;
     setVerifying(true);
     setVerifyError(null);
@@ -73,7 +73,7 @@ function AgentStartContent() {
     } finally {
       setVerifying(false);
     }
-  };
+  }
 
   const handleCompleteAgentOnboard = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,6 +120,7 @@ function AgentStartContent() {
         body: JSON.stringify({
           email: loginEmail,
           password: loginPassword,
+          portal: "/agent",
         }),
       });
 
@@ -298,7 +299,7 @@ function AgentStartContent() {
                   <div className="font-semibold text-slate-300 mb-1">Want to test creating an invitation?</div>
                   <p>
                     Log in as System Admin (<code className="text-purple-300">/admin</code>), visit{" "}
-                    <strong>Agents & Invitations</strong>, click <strong>"Invite New Agent"</strong>, and copy the generated link.
+                    <strong>Agents &amp; Invitations</strong>, click <strong>&quot;Invite New Agent&quot;</strong>, and copy the generated link.
                   </p>
                 </div>
               </div>

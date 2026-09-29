@@ -9,7 +9,8 @@ export const metadata: Metadata = {
     "Official customer support and ecommerce service management platform for Shopify merchants and growing online stores.",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/favicon.ico",
+    icon: [{ url: "/favicon.ico", type: "image/x-icon" }],
+    shortcut: "/favicon.ico",
     apple: "/shopify-bag.svg",
   },
   appleWebApp: {

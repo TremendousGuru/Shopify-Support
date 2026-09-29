@@ -10,10 +10,10 @@ export default function AdminSettingsPage() {
   const [showAlerts, setShowAlerts] = useState(true);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("shopify-admin-theme");
-    if (savedTheme === "dark" || savedTheme === "light") {
-      setTheme(savedTheme);
-    }
+    void Promise.resolve().then(() => {
+      const savedTheme = localStorage.getItem("shopify-admin-theme");
+      if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
+    });
   }, []);
 
   const updateTheme = (nextTheme: "light" | "dark") => {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, users, stores, agents, tickets, serviceRequests } from "@/db/schema";
+import { customers, users, stores, agents, tickets, serviceRequests, serviceOrders, conversations } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { recordAuditLog } from "@/lib/audit";
@@ -59,19 +59,52 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { customerId, supportStatus, assignedAgentId } = body;
 
+    if (assignedAgentId !== undefined && user.role !== "system_admin") {
+      return NextResponse.json({ error: "Only a system administrator can reassign customers" }, { status: 403 });
+    }
+
     if (!customerId) {
       return NextResponse.json({ error: "Customer ID is required" }, { status: 400 });
     }
 
     const updateData: any = { updatedAt: new Date() };
     if (supportStatus) updateData.supportStatus = supportStatus;
-    if (assignedAgentId !== undefined) updateData.assignedAgentId = assignedAgentId || null;
+    if (assignedAgentId !== undefined) {
+      if (assignedAgentId) {
+        const [activeAgent] = await db
+          .select({ id: agents.id, status: agents.status, isActive: users.isActive })
+          .from(agents)
+          .innerJoin(users, eq(users.id, agents.userId))
+          .where(eq(agents.id, assignedAgentId))
+          .limit(1);
+        if (!activeAgent?.isActive || activeAgent.status === "Terminated") {
+          return NextResponse.json({ error: "Choose an active agent" }, { status: 400 });
+        }
+      }
+      updateData.assignedAgentId = assignedAgentId || null;
+    }
 
-    const [updated] = await db
-      .update(customers)
-      .set(updateData)
-      .where(eq(customers.id, customerId))
-      .returning();
+    const [updated] = await db.transaction(async (tx) => {
+      const [customer] = await tx
+        .update(customers)
+        .set(updateData)
+        .where(eq(customers.id, customerId))
+        .returning();
+
+      if (customer && assignedAgentId !== undefined) {
+        const nextAgentId = assignedAgentId || null;
+        await tx.update(tickets).set({ assignedAgentId: nextAgentId, updatedAt: new Date() }).where(eq(tickets.customerId, customerId));
+        await tx.update(serviceRequests).set({ assignedAgentId: nextAgentId, updatedAt: new Date() }).where(eq(serviceRequests.customerId, customerId));
+        await tx.update(serviceOrders).set({ assignedAgentId: nextAgentId, updatedAt: new Date() }).where(eq(serviceOrders.customerId, customerId));
+        await tx.update(conversations).set({ assignedAgentId: nextAgentId }).where(eq(conversations.customerId, customerId));
+      }
+
+      return [customer];
+    });
+
+    if (!updated) {
+      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
 
     // Audit log
     await recordAuditLog({

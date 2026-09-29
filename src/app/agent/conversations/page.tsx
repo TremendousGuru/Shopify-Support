@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import {
   MessageSquare,
   Send,
@@ -13,15 +15,27 @@ import {
   CheckCheck,
   AlertCircle,
   Clock,
+  Search,
 } from "lucide-react";
+import { ChatAttachmentButton } from "@/components/shared/ChatAttachmentButton";
 
 export default function AgentConversationsPage() {
+  const searchParams = useSearchParams();
+  const linkedConversationId = searchParams.get("conversationId");
+  const handledLinkId = useRef<string | null>(null);
   const [conversations, setConversations] = useState<any[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [serviceOptions, setServiceOptions] = useState<any[]>([]);
+  const [recommendedServiceId, setRecommendedServiceId] = useState("");
+  const [recommendedPrice, setRecommendedPrice] = useState("");
+  const [recommendationSending, setRecommendationSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
+  const [conversationSearch, setConversationSearch] = useState("");
 
   // Internal Note form
   const [internalNoteText, setInternalNoteText] = useState("");
@@ -30,22 +44,26 @@ export default function AgentConversationsPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       const res = await fetch("/api/conversations");
       const data = await res.json();
       if (data.conversations) {
         setConversations(data.conversations);
-        if (!selectedConvId && data.conversations.length > 0) {
-          setSelectedConvId(data.conversations[0].id);
-        }
+        setSelectedConvId((current) =>
+          (current && data.conversations.some((conversation: any) => conversation.id === current)
+            ? current
+            : data.conversations.find((conversation: any) => conversation.id === linkedConversationId)?.id)
+            || data.conversations[0]?.id
+            || null
+        );
       }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [linkedConversationId]);
 
   const loadMessages = async (convId: string) => {
     try {
@@ -71,25 +89,52 @@ export default function AgentConversationsPage() {
     }
   };
 
-  useEffect(() => {
-    loadConversations();
+  const loadOrders = useCallback(async () => {
+    try {
+      const response = await fetch("/api/service-orders");
+      const data = await response.json();
+      if (data.orders) setOrders(data.orders);
+    } catch (error) {
+      console.error(error);
+    }
   }, []);
 
   useEffect(() => {
+    void Promise.resolve().then(() => {
+      loadConversations();
+      loadOrders();
+      return fetch("/api/services").then((response) => response.json()).then((data) => {
+        setServiceOptions((data.categories || []).flatMap((category: any) => category.services || []));
+      });
+    }).catch(console.error);
+  }, [loadConversations, loadOrders]);
+
+  useEffect(() => {
+    if (!linkedConversationId || linkedConversationId === handledLinkId.current || !conversations.some((conversation) => conversation.id === linkedConversationId)) return;
+    handledLinkId.current = linkedConversationId;
+    void Promise.resolve().then(() => setSelectedConvId(linkedConversationId));
+  }, [linkedConversationId, conversations]);
+
+  useEffect(() => {
     if (selectedConvId) {
-      loadMessages(selectedConvId);
+      void Promise.resolve().then(() => loadMessages(selectedConvId));
       const timer = setInterval(() => {
         loadMessages(selectedConvId);
+        loadOrders();
       }, 4000);
       return () => clearInterval(timer);
     }
-  }, [selectedConvId]);
+  }, [selectedConvId, loadOrders]);
 
   const activeConv = conversations.find((c) => c.id === selectedConvId);
+  const filteredConversations = conversations.filter((conversation) =>
+    [conversation.customer?.businessName, conversation.customer?.customerCode, conversation.subject, conversation.lastMessage?.content]
+      .some((value) => String(value || "").toLowerCase().includes(conversationSearch.toLowerCase()))
+  );
 
   useEffect(() => {
     if (activeConv?.customerId) {
-      loadInternalNotes(activeConv.customerId);
+      void Promise.resolve().then(() => loadInternalNotes(activeConv.customerId));
     }
   }, [activeConv?.customerId]);
 
@@ -103,7 +148,7 @@ export default function AgentConversationsPage() {
 
     setSending(true);
     const textToSend = content;
-    setContent("");
+    setMessageError(null);
 
     try {
       const res = await fetch("/api/messages", {
@@ -115,11 +160,12 @@ export default function AgentConversationsPage() {
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setMessages((prev) => [...prev, data.message]);
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || "Message could not be sent. Please try again.");
+      setContent("");
+      setMessages((prev) => [...prev, data.message]);
     } catch (e) {
       console.error(e);
+      setMessageError(e instanceof Error ? e.message : "Message could not be sent. Please try again.");
     } finally {
       setSending(false);
     }
@@ -152,6 +198,42 @@ export default function AgentConversationsPage() {
     }
   };
 
+  const handleRecommendService = async () => {
+    if (!selectedConvId || !recommendedServiceId || recommendationSending) return;
+    setRecommendationSending(true);
+    try {
+      const response = await fetch("/api/service-recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: selectedConvId, serviceId: recommendedServiceId, quotePrice: recommendedPrice || undefined }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not send service recommendation");
+      setRecommendedServiceId("");
+      setRecommendedPrice("");
+      await loadMessages(selectedConvId);
+    } catch (error) {
+      console.error(error);
+      window.alert(error instanceof Error ? error.message : "Could not send service recommendation");
+    } finally {
+      setRecommendationSending(false);
+    }
+  };
+
+  const handleOrderAction = async (orderId: string, action: string, status?: string) => {
+    const response = await fetch("/api/service-orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, action, status }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      window.alert(data.error || "Could not update order");
+      return;
+    }
+    await loadOrders();
+  };
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col lg:flex-row h-[calc(100vh-140px)] min-h-[550px]">
       {/* 1. Conversations Queue (Left) */}
@@ -171,8 +253,13 @@ export default function AgentConversationsPage() {
           </button>
         </div>
 
+        <label className="flex items-center gap-2 border-b border-slate-800 px-3 py-2 text-slate-500">
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          <input aria-label="Search conversations" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Search inbox" className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-slate-500" />
+        </label>
+
         <div className="flex-1 overflow-y-auto divide-y divide-slate-800/80">
-          {conversations.map((c) => {
+          {filteredConversations.map((c) => {
             const isSelected = c.id === selectedConvId;
             return (
               <button
@@ -233,6 +320,15 @@ export default function AgentConversationsPage() {
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 bg-slate-950/40">
           {messages.map((m) => {
             const isAgent = m.senderRole === "agent" || m.senderRole === "system_admin";
+            let attachments: any[] = [];
+            try {
+              attachments = m.attachments ? JSON.parse(m.attachments) : [];
+            } catch {
+              attachments = [];
+            }
+            const order = m.serviceRecommendation
+              ? orders.find((item) => item.serviceRequestId === m.serviceRecommendation.requestId)
+              : null;
             return (
               <div
                 key={m.id}
@@ -251,8 +347,36 @@ export default function AgentConversationsPage() {
                       : "bg-slate-800 text-slate-100 border border-slate-700 rounded-bl-xs"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{m.content}</p>
+                  {m.content && <p className="whitespace-pre-wrap">{m.content}</p>}
+                  {attachments.map((attachment) => (
+                    <a key={attachment.id} href={attachment.fileUrl} target="_blank" rel="noreferrer" className="mt-2 block underline underline-offset-2">
+                      {attachment.fileType?.startsWith("image/") ? <Image src={attachment.fileUrl} alt={attachment.fileName} width={640} height={480} unoptimized className="max-h-48 max-w-full rounded-md object-contain" /> : attachment.fileName}
+                    </a>
+                  ))}
                 </div>
+                {isAgent && <div className="mt-1 flex items-center gap-1 px-1 text-[10px] text-slate-400">
+                  {m.isRead ? <><CheckCheck className="h-3 w-3 text-emerald-400" /><span>Read</span></> : <><Clock className="h-3 w-3" /><span>Sent</span></>}
+                </div>}
+                {m.serviceRecommendation && (
+                  <div className="mt-2 w-full max-w-lg rounded-lg border border-blue-500/30 bg-slate-900 p-3 text-xs text-slate-100">
+                    <div className="font-bold">Service quote: {m.serviceRecommendation.serviceName}</div>
+                    <div className="mt-1">${m.serviceRecommendation.quotePrice} USD · {m.serviceRecommendation.quoteTimeline}</div>
+                    {m.serviceRecommendation.quoteTerms && <p className="mt-1 text-slate-300">{m.serviceRecommendation.quoteTerms}</p>}
+                    <div className="mt-2 text-blue-300">Quote {m.serviceRecommendation.quoteStatus?.toLowerCase()}</div>
+                    {order && (
+                      <div className="mt-2 border-t border-slate-700 pt-2">
+                        <div className="font-semibold">Order {order.orderCode}: {order.status}</div>
+                        <div className="mt-1">Payment: {order.paymentStatus}</div>
+                        {order.paymentStatus === "reported" && <button onClick={() => handleOrderAction(order.id, "confirm_payment")} className="mt-2 rounded-md bg-emerald-600 px-3 py-1.5 font-semibold text-white">Confirm payment</button>}
+                        {order.paymentStatus === "confirmed" && (
+                          <select value={order.status} onChange={(event) => handleOrderAction(order.id, "update_status", event.target.value)} className="mt-2 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5">
+                            {[order.status, ...(order.status === "Ready to Start" ? ["In Progress"] : order.status === "In Progress" ? ["Quality Review", "Completed"] : order.status === "Quality Review" ? ["In Progress", "Completed"] : order.status === "Completed" ? ["Closed"] : [])].map((nextStatus) => <option key={nextStatus} value={nextStatus}>{nextStatus}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -261,7 +385,31 @@ export default function AgentConversationsPage() {
 
         {/* Input Composer */}
         <div className="p-3 border-t border-slate-800 bg-slate-900">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <select
+              value={recommendedServiceId}
+              onChange={(event) => setRecommendedServiceId(event.target.value)}
+              className="min-w-48 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-xs text-slate-200"
+            >
+              <option value="">Recommend a catalog service...</option>
+              {serviceOptions.map((service) => <option key={service.id} value={service.id}>{service.name} · ${service.startingPrice || 0}</option>)}
+            </select>
+            <input
+              type="number"
+              min="1"
+              aria-label="Quote price in USD"
+              value={recommendedPrice}
+              onChange={(event) => setRecommendedPrice(event.target.value)}
+              placeholder="Quote USD"
+              className="w-28 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-xs text-white"
+            />
+            <button type="button" disabled={!recommendedServiceId || recommendationSending} onClick={handleRecommendService} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
+              {recommendationSending ? "Sending..." : "Send quote"}
+            </button>
+          </div>
+          {messageError && <p role="alert" className="mb-2 flex items-center gap-1.5 text-xs text-red-300"><AlertCircle className="h-3.5 w-3.5" />{messageError}</p>}
           <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+            {selectedConvId && <ChatAttachmentButton conversationId={selectedConvId} customerId={activeConv?.customerId} agentMode disabled={sending} onSent={(message) => setMessages((current) => [...current, message])} />}
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
