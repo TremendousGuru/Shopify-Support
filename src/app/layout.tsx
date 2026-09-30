@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { PwaRegistration } from "@/components/shared/PwaRegistration";
+import { GoogleAnalytics } from "@/components/shared/GoogleAnalytics";
 
 export const metadata: Metadata = {
   title: "Shopify Support — Merchant Support & Commerce Services",
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [{ url: "/favicon.ico", type: "image/x-icon" }],
     shortcut: "/favicon.ico",
-    apple: "/shopify-bag.svg",
+    apple: "/shopify-logo-180.png",
   },
   appleWebApp: {
     capable: true,
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body className="min-h-screen bg-[#f6f6f7] text-[#202223] antialiased">
         <PwaRegistration />
+        <GoogleAnalytics />
         {children}
       </body>
     </html>

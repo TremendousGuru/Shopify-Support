@@ -14,6 +14,7 @@ import {
   LogOut,
   Headphones,
   CheckCircle,
+  UserRound,
 } from "lucide-react";
 import { ShopifyLogoMark } from "@/components/shared/ShopifyLogoMark";
 
@@ -48,6 +49,7 @@ export function AgentNavigation({ user }: AgentNavProps) {
     { label: "Service Requests", href: "/agent/service-requests", icon: ClipboardList },
     { label: "Internal Notes", href: "/agent/notes", icon: StickyNote },
     { label: "Customer Files", href: "/agent/files", icon: FolderOpen },
+    { label: "Profile & Display Name", href: "/agent/profile", icon: UserRound },
     {
       label: "Notifications",
       href: "/agent/notifications",
@@ -189,6 +191,15 @@ export function AgentNavigation({ user }: AgentNavProps) {
           >
             <ClipboardList className="w-5 h-5" />
             <span>Services</span>
+          </Link>
+          <Link
+            href="/agent/profile"
+            className={`flex flex-col items-center gap-0.5 text-[10px] font-medium ${
+              pathname.startsWith("/agent/profile") ? "text-blue-400" : "text-slate-400"
+            }`}
+          >
+            <UserRound className="w-5 h-5" />
+            <span>Profile</span>
           </Link>
         </div>
       </nav>

@@ -1,8 +1,10 @@
-const CACHE_NAME = "shopify-support-v1";
+const CACHE_NAME = "shopify-support-v3";
 const ASSETS_TO_CACHE = [
   "/",
   "/manifest.webmanifest",
-  "/shopify-bag.svg",
+  "/shopify-logo.svg",
+  "/shopify-logo-192.png",
+  "/shopify-logo-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -53,8 +55,8 @@ self.addEventListener("push", (event) => {
 
   const options = {
     body: data.body,
-    icon: "/shopify-bag.svg",
-    badge: "/shopify-bag.svg",
+    icon: "/shopify-logo-192.png",
+    badge: "/shopify-logo-192.png",
     data: {
       url: data.link || "/customer",
     },

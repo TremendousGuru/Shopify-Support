@@ -1,0 +1,20 @@
+# Shopify Support
+
+> A support and Shopify services platform where merchants, assigned agents, and administrators manage tickets, conversations, service requests, and catalog offerings.
+
+## Public pages
+
+- [Home](/): Overview of the support platform and entry points for merchants and agents.
+
+## Product overview
+
+- Merchants use the customer portal to manage their store profile, support tickets, conversations, files, notifications, service catalog, and service requests.
+- Agents use the agent workspace to work with assigned customers and tickets, respond to conversations, review service requests, share customer files, and manage their display name.
+- Administrators use the admin portal to manage customers and agents, assign agents to customers, manage tickets, review service proposals, and publish or maintain services.
+- Portal pages and API endpoints are intended for authenticated users. Access is determined by the signed-in user's role and assignment permissions.
+- The project source repository contains `WEBSITE_MANUAL.md` with role workflows and operational guidance.
+
+## Important boundaries
+
+- The public homepage is the only page listed in the sitemap. Authenticated workspaces, onboarding/login pages, and API routes are excluded from crawling.
+- Do not treat private portal content, customer records, messages, or uploaded files as public information.
