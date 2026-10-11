@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { db } from "@/db";
-import { files, customers, conversations } from "@/db/schema";
+import { files, customers, conversations, serviceOrders } from "@/db/schema";
 import { and, eq, desc, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { isAdminRole } from "@/lib/portal-access";
@@ -163,6 +163,20 @@ export async function POST(request: Request) {
       }
       if (user.role === "agent" && (!user.agent || !(await canAgentAccessConversation(user.agent.id, conversation)))) {
         return NextResponse.json({ error: "Access denied to this conversation" }, { status: 403 });
+      }
+    }
+
+    if (relatedType === "service_order") {
+      if (user.role !== "agent" || !user.agent || !relatedId || !file.type.startsWith("image/")) {
+        return NextResponse.json({ error: "Only assigned agents can upload service-order completion images" }, { status: 403 });
+      }
+      const [order] = await db
+        .select({ id: serviceOrders.id, customerId: serviceOrders.customerId, assignedAgentId: serviceOrders.assignedAgentId })
+        .from(serviceOrders)
+        .where(eq(serviceOrders.id, relatedId))
+        .limit(1);
+      if (!order || order.customerId !== targetCustomerId || order.assignedAgentId !== user.agent.id) {
+        return NextResponse.json({ error: "Access denied to this service order" }, { status: 403 });
       }
     }
 

@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { conversationId, serviceId, description, quotePrice, quoteTimeline, quoteTerms } = body;
+    const { conversationId, serviceId, description, quotePrice, quoteTimeline, quoteTerms, recurringInterval } = body;
     const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
     if (!conversation || !(await canAgentAccessConversation(user.agent.id, conversation))) {
       return NextResponse.json({ error: "Access denied to this conversation" }, { status: 403 });
@@ -34,7 +34,8 @@ export async function POST(request: Request) {
     if (
       (description !== undefined && (typeof description !== "string" || description.length > 4000)) ||
       (quoteTimeline !== undefined && (typeof quoteTimeline !== "string" || quoteTimeline.length > 120)) ||
-      (quoteTerms !== undefined && (typeof quoteTerms !== "string" || quoteTerms.length > 4000))
+      (quoteTerms !== undefined && (typeof quoteTerms !== "string" || quoteTerms.length > 4000)) ||
+      (recurringInterval !== undefined && !["monthly", "quarterly", "yearly"].includes(recurringInterval))
     ) {
       return NextResponse.json({ error: "Description, timeline, or quote terms exceed the allowed length" }, { status: 400 });
     }
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
           : "Work begins after payment is reported and confirmed by your assigned agent.",
         quoteStatus: "Sent",
         quoteExpiresAt: new Date(Date.now() + QUOTE_VALIDITY_DAYS * 24 * 60 * 60 * 1000),
+        quoteBillingInterval: recurringInterval || null,
       }).returning();
 
       const [message] = await tx.insert(messages).values({

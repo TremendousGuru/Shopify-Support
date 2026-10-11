@@ -31,6 +31,9 @@ export default function CustomerServiceRequestsPage() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [reportedPaymentAmount, setReportedPaymentAmount] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [clockNow, setClockNow] = useState(Date.now());
 
   const fetchRequests = async () => {
     try {
@@ -48,6 +51,11 @@ export default function CustomerServiceRequestsPage() {
 
   useEffect(() => {
     void Promise.resolve().then(fetchRequests);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   const handleQuoteDecision = async (requestId: string, decision: "Accepted" | "Declined", quoteExpiresAt: string) => {
@@ -73,20 +81,49 @@ export default function CustomerServiceRequestsPage() {
     }
   };
 
-  const handleReportPayment = async (orderId: string) => {
+  const handleReportPayment = async (orderId: string, remainingAmount: number) => {
     setActionLoading(orderId);
     try {
       const response = await fetch("/api/service-orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, action: "report_payment" }),
+        body: JSON.stringify({ orderId, action: "report_payment", amount: Number(reportedPaymentAmount) || remainingAmount }),
       });
-      if (response.ok) await fetchRequests();
+      if (response.ok) {
+        setReportedPaymentAmount("");
+        await fetchRequests();
+      }
     } catch (error) {
       console.error(error);
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleCustomerReview = async (orderId: string, status: "satisfied" | "request_changes") => {
+    setActionLoading(orderId);
+    try {
+      const response = await fetch("/api/service-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, action: "customer_review", status, reviewNote }),
+      });
+      if (response.ok) {
+        setReviewNote("");
+        await fetchRequests();
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const getOrderProgress = (order: any) => {
+    if (["Review in Progress", "Completed"].includes(order.status)) return 100;
+    if (!order.workStartedAt || !order.deliveryDueAt) return 0;
+    const started = new Date(order.workStartedAt).getTime();
+    const due = new Date(order.deliveryDueAt).getTime();
+    if (due <= started) return 100;
+    return Math.max(0, Math.min(99, Math.floor(((clockNow - started) / (due - started)) * 100)));
   };
 
   return (
@@ -238,6 +275,7 @@ export default function CustomerServiceRequestsPage() {
                             • Estimated delivery: {req.quoteTimeline}
                           </span>
                         </div>
+                        {req.quoteBillingInterval && <div className="mt-1 text-xs font-semibold text-purple-800">Recurring billing: {req.quoteBillingInterval}</div>}
                         <p className="text-xs text-purple-800 mt-1">
                           Terms: {req.quoteTerms || "Milestone review on staging theme, final approval before live deployment."}
                         </p>
@@ -282,14 +320,26 @@ export default function CustomerServiceRequestsPage() {
                       {req.order && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950">
                           <div className="font-bold">Order {req.order.orderCode} · ${req.order.amount} {req.order.currency}</div>
-                          <div className="mt-1">Status: {req.order.status} · Payment: {req.order.paymentStatus}</div>
-                          {req.order.paymentStatus === "unpaid" && (
-                            <button onClick={() => handleReportPayment(req.order.id)} disabled={actionLoading === req.order.id} className="mt-3 rounded-md bg-amber-700 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
-                              {actionLoading === req.order.id ? "Submitting..." : "I have paid"}
-                            </button>
+                          <div className="mt-1">Status: {req.order.status} · Paid: ${req.order.amountPaid || 0} / ${req.order.amount} {req.order.currency}</div>
+                          {req.order.status === "In Progress" && (
+                            <div className="mt-3">
+                              <div className="mb-1 flex justify-between text-[10px]"><span>Estimated timeline</span><span>{getOrderProgress(req.order)}%</span></div>
+                              <div className="h-2 overflow-hidden rounded-full bg-amber-200"><div className="h-full bg-[#008060] transition-[width]" style={{ width: `${getOrderProgress(req.order)}%` }} /></div>
+                              <p className="mt-1 text-[10px]">Target completion: {req.order.deliveryDueAt ? new Date(req.order.deliveryDueAt).toLocaleDateString() : "Being scheduled"}</p>
+                            </div>
+                          )}
+                          {(["unpaid", "partial"].includes(req.order.paymentStatus) || req.order.recurringPaymentDue) && ["Awaiting Payment", "Ready to Start", "In Progress", "Awaiting Final Payment"].includes(req.order.status) && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <input type="number" min="1" value={reportedPaymentAmount} onChange={(event) => setReportedPaymentAmount(event.target.value)} placeholder={`Amount due: ${req.order.recurringPaymentDue ? req.order.amount : Math.max(req.order.amount - (req.order.amountPaid || 0), 0)}`} className="w-36 rounded-md border border-amber-300 bg-white px-2 py-1.5" />
+                              <button onClick={() => handleReportPayment(req.order.id, req.order.recurringPaymentDue ? req.order.amount : Math.max(req.order.amount - (req.order.amountPaid || 0), 0))} disabled={actionLoading === req.order.id} className="rounded-md bg-amber-700 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
+                                {actionLoading === req.order.id ? "Submitting..." : "I have paid"}
+                              </button>
+                            </div>
                           )}
                           {req.order.paymentStatus === "reported" && <p className="mt-2">Payment reported; your agent must confirm it before work begins.</p>}
-                          {req.order.paymentStatus === "confirmed" && <p className="mt-2">Payment confirmed by your agent.</p>}
+                          {req.order.status === "Review in Progress" && <div className="mt-3 space-y-2 border-t border-amber-200 pt-3"><div className="font-semibold">Review the completed project in chat, then choose:</div><textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} placeholder="Describe any changes you need" className="w-full rounded-md border border-amber-300 bg-white px-2 py-1.5"/><div className="flex flex-wrap gap-2"><button onClick={() => handleCustomerReview(req.order.id, "satisfied")} disabled={actionLoading === req.order.id} className="rounded-md bg-emerald-700 px-3 py-1.5 font-semibold text-white disabled:opacity-50">Satisfied</button><button onClick={() => handleCustomerReview(req.order.id, "request_changes")} disabled={actionLoading === req.order.id} className="rounded-md border border-amber-700 px-3 py-1.5 font-semibold text-amber-900 disabled:opacity-50">Request changes</button></div></div>}
+                          {req.order.status === "Awaiting Final Payment" && <p className="mt-2 font-semibold">You approved the completed work. Report the remaining payment to finish the order.</p>}
+                          {req.order.status === "Completed" && <p className="mt-2 font-semibold text-emerald-800">Project accepted and order complete.</p>}
                         </div>
                       )}
                     </div>

@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       agentToken: requestedAgentToken,
     } = body;
 
-    if (!email || !password || !fullName || !businessName || !storeUrl) {
+    if (!email || !password || !businessName) {
       return NextResponse.json(
         { error: "Missing required onboarding information" },
         { status: 400 }
@@ -101,30 +101,11 @@ export async function POST(request: Request) {
       );
     }
 
-    let ticketCode = cleanTicketNumber;
-    if (ticketCode) {
-      const [existingTicket] = await db
-        .select({ id: tickets.id })
-        .from(tickets)
-        .where(eq(tickets.ticketCode, ticketCode))
-        .limit(1);
-      if (existingTicket) {
-        return NextResponse.json(
-          { error: "That ticket number is already in use. Sign in to the account associated with it or contact support." },
-          { status: 409 }
-        );
-      }
-    } else {
+    let ticketCode = `TKT-${randomInt(100000, 1000000)}`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const [existingTicket] = await db.select({ id: tickets.id }).from(tickets).where(eq(tickets.ticketCode, ticketCode)).limit(1);
+      if (!existingTicket) break;
       ticketCode = `TKT-${randomInt(100000, 1000000)}`;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const [existingTicket] = await db
-          .select({ id: tickets.id })
-          .from(tickets)
-          .where(eq(tickets.ticketCode, ticketCode))
-          .limit(1);
-        if (!existingTicket) break;
-        ticketCode = `TKT-${randomInt(100000, 1000000)}`;
-      }
     }
 
     const result = await db.transaction(async (tx) => {
@@ -133,7 +114,7 @@ export async function POST(request: Request) {
         .values({
           email: cleanEmail,
           passwordHash: hashPassword(password),
-          fullName: fullName.trim(),
+          fullName: typeof fullName === "string" && fullName.trim() ? fullName.trim() : businessName.trim(),
           role: "customer",
           phone: phone?.trim() || null,
           isActive: true,
@@ -158,7 +139,7 @@ export async function POST(request: Request) {
           userId: newUser.id,
           customerCode,
           businessName: businessName.trim(),
-          websiteUrl: websiteUrl?.trim() || storeUrl.trim(),
+          websiteUrl: websiteUrl?.trim() || storeUrl?.trim() || null,
           ecommercePlatform: "Shopify",
           storeCategory: storeCategory || "General Merchandise",
           businessStage: businessStage || "Active Store",
@@ -171,7 +152,7 @@ export async function POST(request: Request) {
       await tx.insert(stores).values({
         customerId: newCustomer.id,
         storeName: (storeName || businessName).trim(),
-        storeUrl: storeUrl.trim(),
+        storeUrl: storeUrl?.trim() || null,
         platform: "Shopify",
         niche: storeCategory || "Retail",
         isPrimary: true,
@@ -202,9 +183,12 @@ export async function POST(request: Request) {
         .insert(tickets)
         .values({
           ticketCode,
+          externalTicketReference: cleanTicketNumber || null,
           customerId: newCustomer.id,
           subject: `Onboarding support for ${businessName.trim()}`,
-          description: initialRequest,
+          description: cleanTicketNumber
+            ? `Existing support ticket ${cleanTicketNumber} submitted during ${businessName.trim()} account onboarding.`
+            : initialRequest,
           category: "Shopify Store Support",
           priority: "Normal",
           status: "Open",

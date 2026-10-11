@@ -42,7 +42,7 @@ export const stores = pgTable("stores", {
   id: uuid("id").primaryKey().defaultRandom(),
   customerId: uuid("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
   storeName: text("store_name").notNull(),
-  storeUrl: text("store_url").notNull(),
+  storeUrl: text("store_url"),
   platform: text("platform").notNull().default("Shopify"),
   niche: text("niche"),
   approxMonthlyOrders: text("approx_monthly_orders"),
@@ -135,6 +135,7 @@ export const serviceRequests = pgTable("service_requests", {
   quoteTerms: text("quote_terms"),
   quoteStatus: text("quote_status"), // 'Draft', 'Sent', 'Accepted', 'Declined'
   quoteExpiresAt: timestamp("quote_expires_at"),
+  quoteBillingInterval: text("quote_billing_interval"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -151,10 +152,19 @@ export const serviceOrders = pgTable("service_orders", {
   currency: text("currency").notNull().default("USD"),
   status: text("status").notNull().default("Awaiting Payment"),
   paymentStatus: text("payment_status").notNull().default("unpaid"),
+  amountPaid: integer("amount_paid").default(0).notNull(),
   paymentReportedAt: timestamp("payment_reported_at"),
+  paymentReportedAmount: integer("payment_reported_amount"),
   paymentConfirmedAt: timestamp("payment_confirmed_at"),
   paymentConfirmedBy: uuid("payment_confirmed_by").references(() => users.id),
   workStartedAt: timestamp("work_started_at"),
+  deliveryDueAt: timestamp("delivery_due_at"),
+  completionFileId: uuid("completion_file_id"),
+  customerReviewNote: text("customer_review_note"),
+  customerSatisfiedAt: timestamp("customer_satisfied_at"),
+  recurringInterval: text("recurring_interval"),
+  nextPaymentDueAt: timestamp("next_payment_due_at"),
+  lastRecurringReminderAt: timestamp("last_recurring_reminder_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -163,6 +173,7 @@ export const serviceOrders = pgTable("service_orders", {
 export const tickets = pgTable("tickets", {
   id: uuid("id").primaryKey().defaultRandom(),
   ticketCode: text("ticket_code").notNull().unique(), // e.g. TKT-8921
+  externalTicketReference: text("external_ticket_reference"),
   customerId: uuid("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
   subject: text("subject").notNull(),
   description: text("description").notNull(),

@@ -52,8 +52,11 @@ async function inspectDeviceAccess(): Promise<{ status: GateStatus; message?: st
   if (Notification.permission !== "granted") return { status: "permission" };
 
   const registration = await navigator.serviceWorker.register("/sw.js");
-  const subscription = await registration.pushManager.getSubscription();
-  if (!subscription) return { status: "permission" };
+  const subscription = await registration.pushManager.getSubscription()
+    || await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: decodeApplicationServerKey(configuration.publicKey),
+    });
 
   await saveSubscription(subscription);
   return { status: "ready" };

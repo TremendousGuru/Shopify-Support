@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -29,6 +29,7 @@ export default function CustomerStartPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasExistingTicket, setHasExistingTicket] = useState(false);
   const [ticketNumber, setTicketNumber] = useState("");
+  const [pushPermissionGranted, setPushPermissionGranted] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -60,25 +61,32 @@ export default function CustomerStartPage() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setPushPermissionGranted(typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted");
+  }, []);
+
   // Notification Permission Request
   const requestBrowserNotification = async () => {
-    if (typeof window !== "undefined" && "Notification" in window) {
-      try {
-        const perm = await Notification.requestPermission();
-        if (perm === "granted") {
-          setFormData((prev) => ({
-            ...prev,
-            notificationPrefs: { ...prev.notificationPrefs, browserPush: true },
-          }));
-        } else {
-          setFormData((prev) => ({
-            ...prev,
-            notificationPrefs: { ...prev.notificationPrefs, browserPush: false },
-          }));
-        }
-      } catch (e) {
-        console.warn("Notification permission request error:", e);
-      }
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setError("This browser must allow device notifications before an account can be created.");
+      return;
+    }
+    if (Notification.permission === "granted") {
+      setPushPermissionGranted(true);
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      const granted = permission === "granted";
+      setPushPermissionGranted(granted);
+      setFormData((current) => ({
+        ...current,
+        notificationPrefs: { ...current.notificationPrefs, browserPush: granted },
+      }));
+      if (!granted) setError("Enable browser notifications to continue with account creation.");
+    } catch (e) {
+      console.warn("Notification permission error:", e);
+      setError("Browser notification permission could not be confirmed.");
     }
   };
 
@@ -97,16 +105,20 @@ export default function CustomerStartPage() {
 
   const handleCompleteOnboarding = async () => {
     setError(null);
-    if (!formData.fullName.trim() || !formData.businessName.trim() || !formData.storeUrl.trim()) {
-      setError("Add your name, business name, and Shopify store URL to continue.");
+    if (!formData.businessName.trim()) {
+      setError("Enter your business name to continue.");
       return;
     }
     if (hasExistingTicket && !ticketNumber.trim()) {
       setError("Enter your existing ticket number or choose that you do not have one.");
       return;
     }
-    if (!formData.termsAccepted || !formData.privacyPolicyAccepted || !formData.supportPolicyAccepted) {
+    if (!formData.termsAccepted) {
       setError("Accept the Terms, Privacy Notice, and support communications policy to continue.");
+      return;
+    }
+    if (!pushPermissionGranted || !("Notification" in window) || Notification.permission !== "granted") {
+      setError("Enable device notifications before creating your account.");
       return;
     }
 
@@ -119,8 +131,14 @@ export default function CustomerStartPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          fullName: formData.businessName.trim(),
+          termsAccepted: true,
+          privacyPolicyAccepted: true,
+          supportPolicyAccepted: true,
+          notificationPrefs: { ...formData.notificationPrefs, browserPush: true },
           storeName: formData.storeName || formData.businessName,
-          websiteUrl: formData.websiteUrl || formData.storeUrl,
+          websiteUrl: formData.websiteUrl || "",
+          storeUrl: "",
           existingTicketNumber: hasExistingTicket ? ticketNumber : "",
           agentToken,
         }),
@@ -313,7 +331,7 @@ export default function CustomerStartPage() {
               <div className="flex items-center justify-between text-xs font-medium text-[#6d7175] mb-2">
                 <span>Step {step} of 2</span>
                 <span className="text-[#008060] font-semibold">
-                  {step === 1 ? "Account" : "Store & support"}
+                  {step === 1 ? "Account" : "Business & support"}
                 </span>
               </div>
               <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
@@ -380,12 +398,10 @@ export default function CustomerStartPage() {
               <div className="space-y-4">
                 <div>
                   <h2 className="text-lg font-bold text-[#202223]">Merchant & Business Details</h2>
-                  <p className="text-xs text-[#6d7175] mt-0.5">
-                    Tell us about yourself and your business so we can tailor our support architecture.
-                  </p>
+                  <p className="text-xs text-[#6d7175] mt-0.5">Add your business name, ticket reference if you have one, and notification access.</p>
                 </div>
 
-                <div>
+                <div className="hidden">
                   <label className="block text-xs font-semibold text-[#202223] mb-1">Full Name</label>
                   <input
                     type="text"
@@ -407,7 +423,7 @@ export default function CustomerStartPage() {
                   />
                 </div>
 
-                <div>
+                <div className="hidden">
                   <label className="block text-xs font-semibold text-[#202223] mb-1">Phone Number (Optional)</label>
                   <input
                     type="text"
@@ -418,7 +434,7 @@ export default function CustomerStartPage() {
                   />
                 </div>
 
-                <div>
+                <div className="hidden">
                   <label className="block text-xs font-semibold text-[#202223] mb-1">Shopify store URL</label>
                   <input
                     type="url"
@@ -429,7 +445,7 @@ export default function CustomerStartPage() {
                   />
                 </div>
 
-                <div>
+                <div className="hidden">
                   <label className="block text-xs font-semibold text-[#202223] mb-1">What do you need help with? (Optional)</label>
                   <textarea
                     rows={2}
@@ -449,7 +465,7 @@ export default function CustomerStartPage() {
                     </label>
                     <label className="flex items-center gap-2">
                       <input type="radio" name="existingTicket" checked={!hasExistingTicket} onChange={() => setHasExistingTicket(false)} />
-                      No, create one for me
+                      No, I don’t have a ticket ID
                     </label>
                   </div>
                   {hasExistingTicket && (
@@ -462,6 +478,26 @@ export default function CustomerStartPage() {
                     />
                   )}
                 </fieldset>
+
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#004c3f]">
+                        <Bell className="h-4 w-4 text-[#008060]" /> Device notifications
+                      </div>
+                      <p className="mt-1 text-[11px] text-[#356b5b]">Permission is requested once. It is needed to continue using the support portal.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={requestBrowserNotification}
+                      disabled={pushPermissionGranted}
+                      className="shrink-0 rounded-lg bg-[#008060] px-3 py-1.5 text-xs font-semibold text-white disabled:bg-emerald-700"
+                    >
+                      {pushPermissionGranted ? "Enabled" : "Enable"}
+                    </button>
+                  </div>
+                  {pushPermissionGranted && <p className="mt-2 text-[11px] font-medium text-emerald-800">Device permission granted.</p>}
+                </div>
 
                 <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-[#202223]">
                   <label className="flex items-start gap-2">

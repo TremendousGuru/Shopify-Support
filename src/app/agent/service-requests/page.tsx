@@ -38,8 +38,11 @@ export default function AgentServiceRequestsPage() {
   const [quotePrice, setQuotePrice] = useState("1850");
   const [quoteTimeline, setQuoteTimeline] = useState("10-14 business days");
   const [quoteTerms, setQuoteTerms] = useState("50% upfront, milestone review on staging theme, 50% upon deployment.");
+  const [quoteBillingInterval, setQuoteBillingInterval] = useState("");
   const [savingQuote, setSavingQuote] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [completionImageByOrder, setCompletionImageByOrder] = useState<Record<string, any>>({});
+  const [clockNow, setClockNow] = useState(Date.now());
 
   const fetchRequests = async () => {
     try {
@@ -65,6 +68,11 @@ export default function AgentServiceRequestsPage() {
         if (nextCategories[0]) setProposal((current) => ({ ...current, categoryId: nextCategories[0].id }));
       });
     }).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   const handleSubmitProposal = async (event: React.FormEvent) => {
@@ -107,6 +115,51 @@ export default function AgentServiceRequestsPage() {
     }
   };
 
+  const handleOrderAction = async (orderId: string, action: string, status?: string, completionFileId?: string) => {
+    try {
+      const response = await fetch("/api/service-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, action, status, completionFileId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not update order");
+      await fetchRequests();
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : "Could not update order");
+    }
+  };
+
+  const handleCompletionImage = async (order: any, customerId: string, file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 15 * 1024 * 1024) {
+      setStatusError("Choose an image no larger than 15 MB.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("customerId", customerId);
+    formData.append("relatedType", "service_order");
+    formData.append("relatedId", order.id);
+    try {
+      const response = await fetch("/api/files", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not upload image");
+      setCompletionImageByOrder((current) => ({ ...current, [order.id]: data.file }));
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : "Could not upload image");
+    }
+  };
+
+  const getOrderProgress = (order: any) => {
+    if (["Review in Progress", "Completed"].includes(order.status)) return 100;
+    if (!order.workStartedAt || !order.deliveryDueAt) return 0;
+    const started = new Date(order.workStartedAt).getTime();
+    const due = new Date(order.deliveryDueAt).getTime();
+    if (due <= started) return 100;
+    return Math.max(0, Math.min(99, Math.floor(((clockNow - started) / (due - started)) * 100)));
+  };
+
   const handleSendQuote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quoteReq) return;
@@ -121,6 +174,7 @@ export default function AgentServiceRequestsPage() {
           quotePrice: Number(quotePrice),
           quoteTimeline,
           quoteTerms,
+          quoteBillingInterval: quoteBillingInterval || null,
           quoteStatus: "Sent",
           status: "Quoted",
         }),
@@ -221,7 +275,7 @@ export default function AgentServiceRequestsPage() {
                     onChange={(e) => handleUpdateStatus(req.id, e.target.value, req.order?.id)}
                     className="bg-slate-800 border border-slate-700 text-xs font-bold text-emerald-400 rounded-lg px-3 py-1.5 focus:outline-none"
                   >
-                    {[...new Set([...STAGES.filter((stage) => !["Approved", "In Progress", "Quality Review", "Completed", "Closed"].includes(stage)), req.status, ...(req.order ? (req.order.status === "Ready to Start" ? ["In Progress"] : req.order.status === "In Progress" ? ["Quality Review", "Completed"] : req.order.status === "Quality Review" ? ["In Progress", "Completed"] : req.order.status === "Completed" ? ["Closed"] : []) : [])])].map((s) => (
+                    {[...new Set([...STAGES.filter((stage) => !["Approved", "In Progress", "Quality Review", "Completed", "Closed"].includes(stage)), req.status, ...(req.order ? (req.order.status === "Ready to Start" || req.order.status === "Revision Requested" ? ["In Progress"] : req.order.status === "In Progress" ? ["Quality Review"] : req.order.status === "Quality Review" ? ["In Progress"] : []) : [])])].map((s) => (
                       <option key={s} value={s}>
                         {s}
                       </option>
@@ -233,6 +287,7 @@ export default function AgentServiceRequestsPage() {
                       setQuoteReq(req);
                       if (req.quotePrice) setQuotePrice(String(req.quotePrice));
                       if (req.quoteTimeline) setQuoteTimeline(req.quoteTimeline);
+                      setQuoteBillingInterval(req.quoteBillingInterval || "");
                     }}
                     className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
                   >
@@ -262,6 +317,20 @@ export default function AgentServiceRequestsPage() {
                     </span>
                   </div>
                   <span className="text-purple-400 text-[11px] truncate">{req.quoteTerms}</span>
+                </div>
+              )}
+
+              {req.order && (
+                <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3 text-xs text-slate-100">
+                  <div className="font-bold">Order {req.order.orderCode} · {req.order.status}</div>
+                  <div className="mt-1">Paid ${req.order.amountPaid || 0} / ${req.order.amount} {req.order.currency}</div>
+                  {req.order.paymentStatus === "reported" && <div className="mt-2 flex gap-2"><button onClick={() => handleOrderAction(req.order.id, "confirm_payment")} className="rounded-md bg-emerald-600 px-3 py-1.5 font-semibold">Confirm full payment</button><button onClick={() => handleOrderAction(req.order.id, "confirm_partial_payment")} className="rounded-md border border-emerald-500 px-3 py-1.5 font-semibold text-emerald-200">Confirm part payment</button></div>}
+                  {req.order.amountPaid > 0 && req.order.amountPaid < req.order.amount && <div className="mt-1 text-amber-300">Remaining: ${req.order.amount - req.order.amountPaid}</div>}
+                  {req.order.status === "In Progress" && <div className="mt-2"><div className="mb-1 flex justify-between text-[10px]"><span>Estimated timeline</span><span>{getOrderProgress(req.order)}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-700"><div className="h-full bg-emerald-400" style={{ width: `${getOrderProgress(req.order)}%` }} /></div><div className="mt-1 text-[10px] text-slate-400">Target: {req.order.deliveryDueAt ? new Date(req.order.deliveryDueAt).toLocaleDateString() : "Being scheduled"}</div></div>}
+                  {req.order.paymentStatus !== "unpaid" && req.order.paymentStatus !== "reported" && <select value={req.order.status} onChange={(event) => handleOrderAction(req.order.id, "update_status", event.target.value)} className="mt-2 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5"><option value={req.order.status}>{req.order.status}</option>{(req.order.status === "Ready to Start" || req.order.status === "Revision Requested") && <option value="In Progress">In Progress</option>}{req.order.status === "In Progress" && <option value="Quality Review">Quality Review</option>}{req.order.status === "Quality Review" && <option value="In Progress">In Progress</option>}</select>}
+                  {req.order.status === "In Progress" && <div className="mt-2 flex flex-wrap items-center gap-2"><input type="file" accept="image/*" aria-label={`Completion image for ${req.order.orderCode}`} onChange={(event) => handleCompletionImage(req.order, req.customer.id, event.target.files?.[0])} className="max-w-56 text-[10px] text-slate-300"/><button disabled={!completionImageByOrder[req.order.id]} onClick={() => handleOrderAction(req.order.id, "update_status", "Completed", completionImageByOrder[req.order.id]?.id)} className="rounded-md bg-blue-600 px-3 py-1.5 font-semibold disabled:opacity-40">Mark project complete</button></div>}
+                  {req.order.status === "Review in Progress" && <div className="mt-2 text-emerald-300">Waiting for customer review.</div>}
+                  {req.order.status === "Awaiting Final Payment" && <div className="mt-2 text-amber-300">Customer approved the project; final payment is due.</div>}
                 </div>
               )}
             </div>
@@ -306,6 +375,16 @@ export default function AgentServiceRequestsPage() {
                   placeholder="e.g. 10 business days"
                   className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-white"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Billing schedule</label>
+                <select value={quoteBillingInterval} onChange={(event) => setQuoteBillingInterval(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white">
+                  <option value="">One-time payment</option>
+                  <option value="monthly">Monthly recurring</option>
+                  <option value="quarterly">Quarterly recurring</option>
+                  <option value="yearly">Yearly recurring</option>
+                </select>
               </div>
 
               <div>

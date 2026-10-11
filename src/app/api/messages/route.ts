@@ -81,6 +81,7 @@ export async function GET(request: Request) {
           quoteTimeline: request.quoteTimeline,
           quoteTerms: request.quoteTerms,
           quoteStatus: request.quoteStatus,
+          quoteBillingInterval: request.quoteBillingInterval,
           quoteExpiresAt: request.quoteExpiresAt,
           quoteExpired: !!request.quoteExpiresAt && request.quoteExpiresAt <= new Date(),
         },

@@ -85,6 +85,12 @@ export async function GET(request: Request) {
           .where(eq(conversations.serviceRequestId, reqItem.id))
           .limit(1);
 
+        const [recommendationMessage] = conv ? [] : await db
+          .select({ conversationId: messages.conversationId })
+          .from(messages)
+          .where(eq(messages.serviceRequestId, reqItem.id))
+          .limit(1);
+
         const [order] = await db
           .select()
           .from(serviceOrders)
@@ -97,7 +103,7 @@ export async function GET(request: Request) {
           service: serv,
           customer: cust,
           assignedAgent: agentInfo,
-          conversationId: conv?.id || null,
+          conversationId: conv?.id || recommendationMessage?.conversationId || null,
           order: order || null,
         };
       })
@@ -210,9 +216,11 @@ export async function PATCH(request: Request) {
       quotePrice,
       quoteTimeline,
       quoteTerms,
+      quoteBillingInterval,
       quoteStatus,
       quoteExpiresAt,
     } = body;
+    const presentedQuoteExpiresAt = typeof quoteExpiresAt === "string" ? new Date(quoteExpiresAt) : null;
 
     if (!requestId) {
       return NextResponse.json({ error: "Request ID is required" }, { status: 400 });
@@ -242,26 +250,7 @@ export async function PATCH(request: Request) {
       if (!allowedStatuses.includes(status)) return NextResponse.json({ error: "Invalid service request status" }, { status: 400 });
       if (status === "Cancelled") return NextResponse.json({ error: "Use the order workflow to cancel an approved service" }, { status: 409 });
       if (["In Progress", "Quality Review", "Completed", "Closed"].includes(status)) {
-        const [order] = await db.select().from(serviceOrders).where(eq(serviceOrders.serviceRequestId, requestId)).limit(1);
-        if (order?.paymentStatus !== "confirmed") {
-          return NextResponse.json({ error: "Payment must be confirmed before delivery work can start" }, { status: 409 });
-        }
-        const allowedTransitions: Record<string, string[]> = {
-          "Ready to Start": ["In Progress"],
-          "In Progress": ["Quality Review", "Completed"],
-          "Quality Review": ["In Progress", "Completed"],
-          Completed: ["Closed"],
-        };
-        if (!order || !allowedTransitions[order.status]?.includes(status)) {
-          return NextResponse.json({ error: `Order cannot move from ${order?.status || "its current state"} to ${status}` }, { status: 409 });
-        }
-        if (order?.paymentStatus === "confirmed") {
-          await db.update(serviceOrders).set({
-            status,
-            workStartedAt: status === "In Progress" ? order.workStartedAt || new Date() : order.workStartedAt,
-            updatedAt: new Date(),
-          }).where(eq(serviceOrders.id, order.id));
-        }
+        return NextResponse.json({ error: "Use the service order workflow for payment, delivery, completion evidence, and customer review" }, { status: 409 });
       }
     }
 
@@ -277,12 +266,11 @@ export async function PATCH(request: Request) {
       }
 
       if (quoteStatus && ["Accepted", "Declined"].includes(quoteStatus)) {
-        const presentedExpiry = typeof quoteExpiresAt === "string" ? new Date(quoteExpiresAt) : null;
         if (
           existingReq.quoteStatus !== "Sent" ||
           existingReq.status !== "Quoted" ||
-          !presentedExpiry || Number.isNaN(presentedExpiry.getTime()) ||
-          !existingReq.quoteExpiresAt || presentedExpiry.getTime() !== existingReq.quoteExpiresAt.getTime() ||
+          !presentedQuoteExpiresAt || Number.isNaN(presentedQuoteExpiresAt.getTime()) ||
+          !existingReq.quoteExpiresAt || presentedQuoteExpiresAt.getTime() !== existingReq.quoteExpiresAt.getTime() ||
           !Number.isSafeInteger(existingReq.quotePrice) || existingReq.quotePrice! < 1 ||
           !existingReq.quoteTimeline?.trim() || !existingReq.quoteTerms?.trim() ||
           !existingReq.quoteExpiresAt || existingReq.quoteExpiresAt <= new Date()
@@ -338,9 +326,13 @@ export async function PATCH(request: Request) {
         if (typeof nextTerms !== "string" || !nextTerms.trim() || nextTerms.length > 4000) {
           return NextResponse.json({ error: "Quote terms are required and must be 4,000 characters or fewer" }, { status: 400 });
         }
+        if (quoteBillingInterval !== undefined && ![null, "monthly", "quarterly", "yearly"].includes(quoteBillingInterval)) {
+          return NextResponse.json({ error: "Choose a valid recurring interval" }, { status: 400 });
+        }
         updateData.quotePrice = nextPrice;
         updateData.quoteTimeline = nextTimeline.trim();
         updateData.quoteTerms = nextTerms.trim();
+        if (quoteBillingInterval !== undefined) updateData.quoteBillingInterval = quoteBillingInterval || null;
         updateData.quoteStatus = "Sent";
         updateData.quoteExpiresAt = new Date(Date.now() + QUOTE_VALIDITY_DAYS * 24 * 60 * 60 * 1000);
         updateData.status = "Quoted";
@@ -353,7 +345,7 @@ export async function PATCH(request: Request) {
       if (user.role === "customer" && quoteStatus) {
         conditions.push(eq(serviceRequests.quoteStatus, "Sent"));
         conditions.push(eq(serviceRequests.status, "Quoted"));
-        conditions.push(eq(serviceRequests.quoteExpiresAt, quoteExpiresAt));
+        conditions.push(eq(serviceRequests.quoteExpiresAt, presentedQuoteExpiresAt!));
         conditions.push(gt(serviceRequests.quoteExpiresAt, new Date()));
       }
       const [requestUpdate] = await tx
@@ -378,6 +370,8 @@ export async function PATCH(request: Request) {
           amount: existingReq.quotePrice!,
           status: "Awaiting Payment",
           paymentStatus: "unpaid",
+          recurringInterval: existingReq.quoteBillingInterval,
+          nextPaymentDueAt: existingReq.quoteBillingInterval ? new Date() : null,
         }).onConflictDoNothing({ target: serviceOrders.serviceRequestId }).returning();
       }
 

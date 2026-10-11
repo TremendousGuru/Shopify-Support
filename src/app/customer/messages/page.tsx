@@ -29,8 +29,14 @@ export default function CustomerMessagesPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [sending, setSending] = useState<boolean>(false);
   const [messageError, setMessageError] = useState<string | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteActionId, setQuoteActionId] = useState<string | null>(null);
+  const [reportedPaymentAmount, setReportedPaymentAmount] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [clockNow, setClockNow] = useState(Date.now());
   const [content, setContent] = useState<string>("");
   const [conversationSearch, setConversationSearch] = useState("");
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch conversations
@@ -100,8 +106,14 @@ export default function CustomerMessagesPage() {
   }, [selectedConvId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesContainerRef.current;
+    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,7 +137,6 @@ export default function CustomerMessagesPage() {
       if (!res.ok || !data.success) throw new Error(data.error || "Message could not be sent. Please try again.");
       setContent("");
       setMessages((prev) => [...prev, data.message]);
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     } catch (e) {
       console.error(e);
       setMessageError(e instanceof Error ? e.message : "Message could not be sent. Please try again.");
@@ -135,24 +146,64 @@ export default function CustomerMessagesPage() {
   };
 
   const handleQuoteDecision = async (requestId: string, quoteStatus: "Accepted" | "Declined", quoteExpiresAt: string) => {
-    const response = await fetch("/api/service-requests", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId, quoteStatus, quoteExpiresAt }),
-    });
-    const data = await response.json();
-    if (!response.ok) return;
-    if (data.order) setOrders((current) => [data.order, ...current.filter((order) => order.id !== data.order.id)]);
-    await loadMessages(selectedConvId!);
+    if (quoteActionId) return;
+    setQuoteActionId(requestId);
+    setQuoteError(null);
+    try {
+      const response = await fetch("/api/service-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, quoteStatus, quoteExpiresAt }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not update this quote.");
+      if (quoteStatus === "Accepted" && !data.order) throw new Error("Quote was accepted, but the order was not returned. Refresh the page or contact support.");
+      if (data.order) setOrders((current) => [data.order, ...current.filter((order) => order.id !== data.order.id)]);
+      await Promise.all([selectedConvId ? loadMessages(selectedConvId) : Promise.resolve(), loadOrders()]);
+    } catch (error) {
+      setQuoteError(error instanceof Error ? error.message : "Could not update this quote.");
+    } finally {
+      setQuoteActionId(null);
+    }
   };
 
-  const handleReportPayment = async (orderId: string) => {
+  const handleReportPayment = async (orderId: string, remainingAmount: number) => {
     const response = await fetch("/api/service-orders", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId, action: "report_payment" }),
+      body: JSON.stringify({ orderId, action: "report_payment", amount: Number(reportedPaymentAmount) || remainingAmount }),
     });
-    if (response.ok) loadOrders();
+    if (response.ok) {
+      setReportedPaymentAmount("");
+      await loadOrders();
+    } else {
+      const data = await response.json();
+      setQuoteError(data.error || "Could not report payment.");
+    }
+  };
+
+  const handleCustomerReview = async (orderId: string, status: "satisfied" | "request_changes") => {
+    const response = await fetch("/api/service-orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, action: "customer_review", status, reviewNote }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setQuoteError(data.error || "Could not save your review.");
+      return;
+    }
+    setReviewNote("");
+    await loadOrders();
+  };
+
+  const getOrderProgress = (order: any) => {
+    if (["Review in Progress", "Completed"].includes(order.status)) return 100;
+    if (!order.workStartedAt || !order.deliveryDueAt) return 0;
+    const started = new Date(order.workStartedAt).getTime();
+    const due = new Date(order.deliveryDueAt).getTime();
+    if (due <= started) return 100;
+    return Math.max(0, Math.min(99, Math.floor(((clockNow - started) / (due - started)) * 100)));
   };
 
   const activeConv = conversations.find((c) => c.id === selectedConvId);
@@ -162,9 +213,9 @@ export default function CustomerMessagesPage() {
   );
 
   return (
-    <div className="bg-white border border-[#e1e3e5] rounded-2xl shadow-sm overflow-hidden flex flex-col md:flex-row h-[calc(100vh-140px)] min-h-[500px]">
+    <div className="bg-white border border-[#e1e3e5] rounded-2xl shadow-sm overflow-hidden flex min-h-0 flex-col md:flex-row h-[calc(100dvh-180px)] min-h-[400px] md:h-[calc(100dvh-140px)]">
       {/* Conversations List (Left Column) */}
-      <div className="w-full md:w-80 border-r border-[#e1e3e5] flex flex-col bg-[#fbfbfb]">
+      <div className="flex min-h-0 w-full flex-col border-r border-[#e1e3e5] bg-[#fbfbfb] md:w-80">
         <div className="p-4 border-b border-[#e1e3e5] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4 text-[#008060]" />
@@ -229,7 +280,7 @@ export default function CustomerMessagesPage() {
       </div>
 
       {/* Active Conversation Chat Window (Right / Center) */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
         {/* Chat Header */}
         <div className="p-4 border-b border-[#e1e3e5] flex items-center justify-between bg-white z-10">
           <div className="flex items-center gap-3">
@@ -255,7 +306,8 @@ export default function CustomerMessagesPage() {
         </div>
 
         {/* Message Stream */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#f9fafb]">
+        <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 bg-[#f9fafb]">
+          {quoteError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{quoteError}</div>}
           {messages.length === 0 ? (
             <div className="text-center py-12 text-xs text-gray-400">
               <MessageSquare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
@@ -303,11 +355,12 @@ export default function CustomerMessagesPage() {
                     <div className="mt-2 w-full max-w-lg rounded-lg border border-emerald-200 bg-white p-3 text-xs text-[#202223]">
                       <div className="font-bold">Service recommendation: {m.serviceRecommendation.serviceName}</div>
                       <div className="mt-1">Quote: ${m.serviceRecommendation.quotePrice} USD · {m.serviceRecommendation.quoteTimeline}</div>
+                      {m.serviceRecommendation.quoteBillingInterval && <div className="mt-1 font-semibold text-amber-800">Recurring: {m.serviceRecommendation.quoteBillingInterval}</div>}
                       {m.serviceRecommendation.quoteTerms && <p className="mt-1 text-gray-600">{m.serviceRecommendation.quoteTerms}</p>}
                       {m.serviceRecommendation.quoteStatus === "Sent" && m.serviceRecommendation.quoteExpiresAt && !m.serviceRecommendation.quoteExpired ? (
                         <div className="mt-3 flex gap-2">
-                          <button onClick={() => handleQuoteDecision(m.serviceRecommendation.requestId, "Accepted", m.serviceRecommendation.quoteExpiresAt)} className="rounded-md bg-[#008060] px-3 py-1.5 font-semibold text-white">Approve and place order</button>
-                          <button onClick={() => handleQuoteDecision(m.serviceRecommendation.requestId, "Declined", m.serviceRecommendation.quoteExpiresAt)} className="rounded-md border border-gray-300 px-3 py-1.5 font-semibold">Decline</button>
+                          <button disabled={quoteActionId === m.serviceRecommendation.requestId} onClick={() => handleQuoteDecision(m.serviceRecommendation.requestId, "Accepted", m.serviceRecommendation.quoteExpiresAt)} className="rounded-md bg-[#008060] px-3 py-1.5 font-semibold text-white disabled:opacity-50">{quoteActionId === m.serviceRecommendation.requestId ? "Processing..." : "Approve and place order"}</button>
+                          <button disabled={quoteActionId === m.serviceRecommendation.requestId} onClick={() => handleQuoteDecision(m.serviceRecommendation.requestId, "Declined", m.serviceRecommendation.quoteExpiresAt)} className="rounded-md border border-gray-300 px-3 py-1.5 font-semibold disabled:opacity-50">Decline</button>
                         </div>
                       ) : <div className="mt-2 font-semibold text-gray-600">
                         {m.serviceRecommendation.quoteStatus === "Sent" ? "Quote expired" : `Quote ${m.serviceRecommendation.quoteStatus?.toLowerCase()}`}
@@ -315,9 +368,24 @@ export default function CustomerMessagesPage() {
                       {order && (
                         <div className="mt-3 border-t border-gray-100 pt-2">
                           <div className="font-bold">Order {order.orderCode}: {order.status}</div>
-                          <div className="mt-1">Payment: {order.paymentStatus}</div>
-                          {order.paymentStatus === "unpaid" && <button onClick={() => handleReportPayment(order.id)} className="mt-2 rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white">I have paid</button>}
+                          <div className="mt-1">Paid: ${order.amountPaid || 0} / ${order.amount} {order.currency}</div>
+                          {order.status === "In Progress" && (
+                            <div className="mt-3">
+                              <div className="mb-1 flex justify-between text-[10px] text-gray-600"><span>Estimated timeline</span><span>{getOrderProgress(order)}%</span></div>
+                              <div className="h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full bg-[#008060] transition-[width]" style={{ width: `${getOrderProgress(order)}%` }} /></div>
+                              <p className="mt-1 text-[10px] text-gray-500">Target completion: {order.deliveryDueAt ? new Date(order.deliveryDueAt).toLocaleDateString() : "Being scheduled"}</p>
+                            </div>
+                          )}
+                          {["unpaid", "partial"].includes(order.paymentStatus) && ["Awaiting Payment", "Ready to Start", "In Progress", "Awaiting Final Payment"].includes(order.status) && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <input type="number" min="1" max={Math.max(order.amount - (order.amountPaid || 0), 1)} value={reportedPaymentAmount} onChange={(event) => setReportedPaymentAmount(event.target.value)} placeholder={`Amount, up to ${Math.max(order.amount - (order.amountPaid || 0), 0)}`} className="w-36 rounded-md border border-gray-300 px-2 py-1.5" />
+                              <button onClick={() => handleReportPayment(order.id, Math.max(order.amount - (order.amountPaid || 0), 0))} className="rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white">I have paid</button>
+                            </div>
+                          )}
                           {order.paymentStatus === "reported" && <div className="mt-2 text-amber-700">Payment reported. Waiting for your agent to confirm.</div>}
+                          {order.status === "Review in Progress" && <div className="mt-3 space-y-2 border-t border-gray-100 pt-2"><div className="font-semibold">Review the completed project</div><textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={2} placeholder="Describe any changes you need" className="w-full rounded-md border border-gray-300 px-2 py-1.5"/><div className="flex flex-wrap gap-2"><button onClick={() => handleCustomerReview(order.id, "satisfied")} className="rounded-md bg-emerald-700 px-3 py-1.5 font-semibold text-white">Satisfied</button><button onClick={() => handleCustomerReview(order.id, "request_changes")} className="rounded-md border border-amber-600 px-3 py-1.5 font-semibold text-amber-800">Request changes</button></div></div>}
+                          {order.status === "Awaiting Final Payment" && <div className="mt-2 font-semibold text-amber-800">You approved the completed project. Report the remaining payment to finish the order.</div>}
+                          {order.status === "Completed" && <div className="mt-2 font-semibold text-emerald-700">Project accepted and order complete.</div>}
                         </div>
                       )}
                     </div>

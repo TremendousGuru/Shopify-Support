@@ -30,7 +30,10 @@ export default function AgentConversationsPage() {
   const [serviceOptions, setServiceOptions] = useState<any[]>([]);
   const [recommendedServiceId, setRecommendedServiceId] = useState("");
   const [recommendedPrice, setRecommendedPrice] = useState("");
+  const [recurringInterval, setRecurringInterval] = useState("");
   const [recommendationSending, setRecommendationSending] = useState(false);
+  const [completionImageByOrder, setCompletionImageByOrder] = useState<Record<string, any>>({});
+  const [clockNow, setClockNow] = useState(Date.now());
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
@@ -126,6 +129,11 @@ export default function AgentConversationsPage() {
     }
   }, [selectedConvId, loadOrders]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const activeConv = conversations.find((c) => c.id === selectedConvId);
   const filteredConversations = conversations.filter((conversation) =>
     [conversation.customer?.businessName, conversation.customer?.customerCode, conversation.subject, conversation.lastMessage?.content]
@@ -205,7 +213,7 @@ export default function AgentConversationsPage() {
       const response = await fetch("/api/service-recommendations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: selectedConvId, serviceId: recommendedServiceId, quotePrice: recommendedPrice || undefined }),
+        body: JSON.stringify({ conversationId: selectedConvId, serviceId: recommendedServiceId, quotePrice: recommendedPrice || undefined, recurringInterval: recurringInterval || undefined }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not send service recommendation");
@@ -220,11 +228,11 @@ export default function AgentConversationsPage() {
     }
   };
 
-  const handleOrderAction = async (orderId: string, action: string, status?: string) => {
+  const handleOrderAction = async (orderId: string, action: string, status?: string, extra: Record<string, unknown> = {}) => {
     const response = await fetch("/api/service-orders", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId, action, status }),
+      body: JSON.stringify({ orderId, action, status, ...extra }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -232,6 +240,36 @@ export default function AgentConversationsPage() {
       return;
     }
     await loadOrders();
+  };
+
+  const handleCompletionImage = async (order: any, file?: File) => {
+    if (!file || !activeConv?.customerId) return;
+    if (!file.type.startsWith("image/") || file.size > 15 * 1024 * 1024) {
+      window.alert("Choose an image no larger than 15 MB.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("customerId", activeConv.customerId);
+    formData.append("relatedType", "service_order");
+    formData.append("relatedId", order.id);
+    try {
+      const response = await fetch("/api/files", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not upload completion image");
+      setCompletionImageByOrder((current) => ({ ...current, [order.id]: data.file }));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not upload completion image");
+    }
+  };
+
+  const getOrderProgress = (order: any) => {
+    if (["Review in Progress", "Completed"].includes(order.status)) return 100;
+    if (!order.workStartedAt || !order.deliveryDueAt) return 0;
+    const started = new Date(order.workStartedAt).getTime();
+    const due = new Date(order.deliveryDueAt).getTime();
+    if (due <= started) return 100;
+    return Math.max(0, Math.min(99, Math.floor(((clockNow - started) / (due - started)) * 100)));
   };
 
   return (
@@ -366,13 +404,24 @@ export default function AgentConversationsPage() {
                     {order && (
                       <div className="mt-2 border-t border-slate-700 pt-2">
                         <div className="font-semibold">Order {order.orderCode}: {order.status}</div>
-                        <div className="mt-1">Payment: {order.paymentStatus}</div>
-                        {order.paymentStatus === "reported" && <button onClick={() => handleOrderAction(order.id, "confirm_payment")} className="mt-2 rounded-md bg-emerald-600 px-3 py-1.5 font-semibold text-white">Confirm payment</button>}
-                        {order.paymentStatus === "confirmed" && (
+                        <div className="mt-1">Paid: ${order.amountPaid || 0} / ${order.amount} {order.currency}</div>
+                        {order.paymentStatus === "reported" && <div className="mt-2 flex flex-wrap gap-2"><button onClick={() => handleOrderAction(order.id, "confirm_payment")} className="rounded-md bg-emerald-600 px-3 py-1.5 font-semibold text-white">Confirm full payment</button><button onClick={() => handleOrderAction(order.id, "confirm_partial_payment")} className="rounded-md border border-emerald-500 px-3 py-1.5 font-semibold text-emerald-200">Confirm part payment</button></div>}
+                        {order.amountPaid > 0 && order.amountPaid < order.amount && <div className="mt-1 text-amber-300">Part-paid; remaining ${order.amount - order.amountPaid} {order.currency}</div>}
+                        {order.status === "In Progress" && (
+                          <div className="mt-3">
+                            <div className="mb-1 flex justify-between text-[10px] text-slate-300"><span>Time-based progress</span><span>{getOrderProgress(order)}%</span></div>
+                            <div className="h-2 overflow-hidden rounded-full bg-slate-700"><div className="h-full bg-emerald-400 transition-[width]" style={{ width: `${getOrderProgress(order)}%` }} /></div>
+                            <p className="mt-1 text-[10px] text-slate-400">Target: {order.deliveryDueAt ? new Date(order.deliveryDueAt).toLocaleDateString() : "Not set"}</p>
+                          </div>
+                        )}
+                        {order.paymentStatus !== "unpaid" && order.paymentStatus !== "reported" && (
                           <select value={order.status} onChange={(event) => handleOrderAction(order.id, "update_status", event.target.value)} className="mt-2 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5">
-                            {[order.status, ...(order.status === "Ready to Start" ? ["In Progress"] : order.status === "In Progress" ? ["Quality Review", "Completed"] : order.status === "Quality Review" ? ["In Progress", "Completed"] : order.status === "Completed" ? ["Closed"] : [])].map((nextStatus) => <option key={nextStatus} value={nextStatus}>{nextStatus}</option>)}
+                            {[order.status, ...(order.status === "Ready to Start" || order.status === "Revision Requested" ? ["In Progress"] : order.status === "In Progress" ? ["Quality Review", "Completed"] : order.status === "Quality Review" ? ["In Progress", "Completed"] : [])].map((nextStatus) => <option key={nextStatus} value={nextStatus}>{nextStatus}</option>)}
                           </select>
                         )}
+                        {order.status === "In Progress" && <div className="mt-2 flex items-center gap-2"><input type="file" accept="image/*" aria-label={`Completion image for ${order.orderCode}`} onChange={(event) => handleCompletionImage(order, event.target.files?.[0])} className="max-w-56 text-[10px] text-slate-300"/><button disabled={!completionImageByOrder[order.id]} onClick={() => handleOrderAction(order.id, "update_status", "Completed", { completionFileId: completionImageByOrder[order.id]?.id })} className="rounded-md bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:opacity-40">Mark project complete</button></div>}
+                        {order.status === "Review in Progress" && <div className="mt-2 text-emerald-300">Customer review is in progress.</div>}
+                        {order.status === "Awaiting Final Payment" && <div className="mt-2 text-amber-300">Customer is satisfied; awaiting final payment confirmation.</div>}
                       </div>
                     )}
                   </div>
@@ -403,6 +452,12 @@ export default function AgentConversationsPage() {
               placeholder="Quote USD"
               className="w-28 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-xs text-white"
             />
+            <select value={recurringInterval} onChange={(event) => setRecurringInterval(event.target.value)} aria-label="Recurring payment interval" className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-xs text-white">
+              <option value="">One-time</option>
+              <option value="monthly">Monthly recurring</option>
+              <option value="quarterly">Quarterly recurring</option>
+              <option value="yearly">Yearly recurring</option>
+            </select>
             <button type="button" disabled={!recommendedServiceId || recommendationSending} onClick={handleRecommendService} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
               {recommendationSending ? "Sending..." : "Send quote"}
             </button>
