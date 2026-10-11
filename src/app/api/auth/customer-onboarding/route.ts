@@ -3,7 +3,6 @@ import { db } from "@/db";
 import {
   users,
   customers,
-  stores,
   agents,
   tickets,
   conversations,
@@ -138,17 +137,6 @@ export async function POST(request: Request) {
           assignedAgentId: assignedAgent.id,
         })
         .returning();
-
-      // The connected production database defines stores.store_url as NOT NULL.
-      // Keep an empty value for merchants who have not supplied a store URL yet.
-      await tx.insert(stores).values({
-        customerId: newCustomer.id,
-        storeName: (storeName || businessName).trim(),
-        storeUrl: storeUrl?.trim() || "",
-        platform: "Shopify",
-        niche: storeCategory || "Retail",
-        isPrimary: true,
-      });
 
       await tx.insert(consentRecords).values({
         userId: newUser.id,
