@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { hashPassword, generateCustomerCode, createSession } from "@/lib/auth";
 import { verifyAgentSignupToken } from "@/lib/agent-links";
 import { sendNotification } from "@/lib/notifications";
@@ -21,7 +22,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       email,
-      password,
       fullName,
       businessName,
       phone,
@@ -31,31 +31,19 @@ export async function POST(request: Request) {
       storeCategory,
       businessStage,
       primaryGoals,
-      termsAccepted,
-      privacyPolicyAccepted,
-      supportPolicyAccepted,
       marketingConsent,
       existingTicketNumber,
       agentToken: requestedAgentToken,
     } = body;
 
-    if (!email || !password || !businessName) {
+    if (!email || !businessName) {
       return NextResponse.json(
         { error: "Missing required onboarding information" },
         { status: 400 }
       );
     }
 
-    if (String(password).length < 8) {
-      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
-    }
-
-    if (!termsAccepted || !privacyPolicyAccepted || !supportPolicyAccepted) {
-      return NextResponse.json(
-        { error: "You must accept the Terms, Privacy Notice, and support communications policy." },
-        { status: 400 }
-      );
-    }
+    const generatedPassword = randomBytes(24).toString("base64url");
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanTicketNumber = String(existingTicketNumber || "").trim().toUpperCase();
@@ -113,7 +101,7 @@ export async function POST(request: Request) {
         .insert(users)
         .values({
           email: cleanEmail,
-          passwordHash: hashPassword(password),
+          passwordHash: hashPassword(generatedPassword),
           fullName: typeof fullName === "string" && fullName.trim() ? fullName.trim() : businessName.trim(),
           role: "customer",
           phone: phone?.trim() || null,
@@ -160,9 +148,9 @@ export async function POST(request: Request) {
 
       await tx.insert(consentRecords).values({
         userId: newUser.id,
-        termsAccepted: true,
-        privacyPolicyAccepted: true,
-        supportPolicyAccepted: true,
+        termsAccepted: false,
+        privacyPolicyAccepted: false,
+        supportPolicyAccepted: false,
         marketingConsent: Boolean(marketingConsent),
         ipAddress: request.headers.get("x-forwarded-for") || "127.0.0.1",
         userAgent: request.headers.get("user-agent") || "Shopify Support Client",
@@ -228,6 +216,7 @@ export async function POST(request: Request) {
       ticketCode: result.newTicket.ticketCode,
       conversationId: result.conversation.id,
       assignedAgentCode: assignedAgent.agentCode,
+      generatedPassword,
       user: {
         id: result.newUser.id,
         email: result.newUser.email,
