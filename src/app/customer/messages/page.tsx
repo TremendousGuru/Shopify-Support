@@ -38,6 +38,7 @@ export default function CustomerMessagesPage() {
   const [conversationSearch, setConversationSearch] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastDisplayedMessageId = useRef<string | null>(null);
 
   // Fetch conversations
   const loadConversations = useCallback(async () => {
@@ -95,6 +96,10 @@ export default function CustomerMessagesPage() {
   }, [linkedConversationId, conversations]);
 
   useEffect(() => {
+    lastDisplayedMessageId.current = null;
+  }, [selectedConvId]);
+
+  useEffect(() => {
     if (selectedConvId) {
       void Promise.resolve().then(() => loadMessages(selectedConvId));
       // Real-time polling interval (every 4 seconds) to ensure real-time updates
@@ -107,7 +112,19 @@ export default function CustomerMessagesPage() {
 
   useEffect(() => {
     const container = messagesContainerRef.current;
-    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    const lastMessageId = messages.at(-1)?.id ?? null;
+    if (!container || !lastMessageId || lastMessageId === lastDisplayedMessageId.current) return;
+
+    const isInitialMessage = lastDisplayedMessageId.current === null;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = distanceFromBottom < 120;
+    lastDisplayedMessageId.current = lastMessageId;
+
+    // Only follow new messages when the customer is already near the bottom.
+    // Polling refreshes must not interrupt someone reading older messages.
+    if (isInitialMessage || isNearBottom) {
+      container.scrollTo({ top: container.scrollHeight, behavior: isInitialMessage ? "auto" : "smooth" });
+    }
   }, [messages]);
 
   useEffect(() => {
