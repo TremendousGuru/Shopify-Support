@@ -3,20 +3,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Copy, Lock, Mail, Store } from "lucide-react";
+import { ArrowRight, Lock, Mail, Store } from "lucide-react";
 import { ShopifyLogoMark } from "@/components/shared/ShopifyLogoMark";
 
 export default function CustomerStartPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"onboarding" | "login">("onboarding");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [ticketChoice, setTicketChoice] = useState<"existing" | "none" | null>(null);
   const [ticketNumber, setTicketNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ password: string; conversationId: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [created, setCreated] = useState<{ conversationId: string } | null>(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
@@ -26,6 +26,7 @@ export default function CustomerStartPage() {
     event.preventDefault();
     setError(null);
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError("Enter a valid email address.");
+    if (password.length < 8) return setError("Choose a password with at least 8 characters.");
     if (!businessName.trim()) return setError("Enter your business name.");
     if (!ticketChoice) return setError("Choose whether you have an existing ticket ID.");
     if (ticketChoice === "existing" && !ticketNumber.trim()) return setError("Enter your existing ticket ID.");
@@ -37,13 +38,14 @@ export default function CustomerStartPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.trim(),
+          password,
           businessName: businessName.trim(),
           existingTicketNumber: ticketChoice === "existing" ? ticketNumber.trim() : "",
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not create your account.");
-      setCreated({ password: data.generatedPassword, conversationId: data.conversationId });
+      setCreated({ conversationId: data.conversationId });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create your account.");
     } finally {
@@ -100,8 +102,7 @@ export default function CustomerStartPage() {
             </form>
           ) : created ? (
             <div className="space-y-5">
-              <div><h2 className="text-xl font-bold">Your support account is ready</h2><p className="mt-1 text-sm leading-6 text-[#626d65]">Save this one-time generated password so you can sign in again on another device. It will not be shown again.</p></div>
-              <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3"><code className="min-w-0 flex-1 break-all text-sm font-semibold">{created.password}</code><button type="button" onClick={() => { void navigator.clipboard.writeText(created.password).then(() => setCopied(true)); }} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-300 px-2 py-1.5 text-xs font-semibold"><Copy className="h-3.5 w-3.5"/>{copied ? "Copied" : "Copy"}</button></div>
+              <div><h2 className="text-xl font-bold">Your support account is ready</h2><p className="mt-1 text-sm leading-6 text-[#626d65]">Your account has been created. Continue to your support chat.</p></div>
               <button onClick={() => { router.push(`/customer/messages?conversationId=${encodeURIComponent(created.conversationId)}`); router.refresh(); }} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#008060] py-3 text-sm font-semibold text-white">Open support chat<ArrowRight className="h-4 w-4"/></button>
             </div>
           ) : (
@@ -109,6 +110,7 @@ export default function CustomerStartPage() {
               <div><h2 className="text-xl font-bold">Create your support account</h2><p className="mt-1 text-sm text-[#6d7175]">Just the details we need to get you to the right support agent.</p></div>
               {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
               <label className="block text-sm font-semibold">Email address<div className="relative mt-1"><Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@business.com" autoComplete="email" className="w-full rounded-lg border border-[#e1e3e5] py-2.5 pl-9 pr-3"/></div></label>
+              <label className="block text-sm font-semibold">Password<div className="relative mt-1"><Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" className="w-full rounded-lg border border-[#e1e3e5] py-2.5 pl-9 pr-3"/></div></label>
               <label className="block text-sm font-semibold">Business name<div className="relative mt-1"><Store className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="text" required maxLength={160} value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Your business" autoComplete="organization" className="w-full rounded-lg border border-[#e1e3e5] py-2.5 pl-9 pr-3"/></div></label>
               <fieldset className="space-y-2"><legend className="mb-2 text-sm font-semibold">Do you already have a support ticket ID?</legend><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e1e3e5] p-3 text-sm"><input type="radio" name="ticketChoice" checked={ticketChoice === "existing"} onChange={() => setTicketChoice("existing")}/>Yes, I have a ticket ID</label><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e1e3e5] p-3 text-sm"><input type="radio" name="ticketChoice" checked={ticketChoice === "none"} onChange={() => setTicketChoice("none")}/>I don’t have one</label></fieldset>
               {ticketChoice === "existing" && <label className="block text-sm font-semibold">Existing ticket ID<input type="text" required maxLength={64} value={ticketNumber} onChange={(e) => setTicketNumber(e.target.value)} placeholder="Ticket ID" className="mt-1 w-full rounded-lg border border-[#e1e3e5] px-3 py-2.5"/></label>}

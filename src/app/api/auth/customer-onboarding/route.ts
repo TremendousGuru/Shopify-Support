@@ -3,7 +3,6 @@ import { db } from "@/db";
 import {
   users,
   customers,
-  stores,
   agents,
   tickets,
   conversations,
@@ -12,7 +11,6 @@ import {
 } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { randomInt } from "node:crypto";
-import { randomBytes } from "node:crypto";
 import { hashPassword, generateCustomerCode, createSession } from "@/lib/auth";
 import { verifyAgentSignupToken } from "@/lib/agent-links";
 import { sendNotification } from "@/lib/notifications";
@@ -22,6 +20,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       email,
+      password,
       fullName,
       businessName,
       phone,
@@ -36,14 +35,16 @@ export async function POST(request: Request) {
       agentToken: requestedAgentToken,
     } = body;
 
-    if (!email || !businessName) {
+    if (!email || !password || !businessName) {
       return NextResponse.json(
         { error: "Missing required onboarding information" },
         { status: 400 }
       );
     }
 
-    const generatedPassword = randomBytes(24).toString("base64url");
+    if (typeof password !== "string" || password.length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    }
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanTicketNumber = String(existingTicketNumber || "").trim().toUpperCase();
@@ -101,7 +102,7 @@ export async function POST(request: Request) {
         .insert(users)
         .values({
           email: cleanEmail,
-          passwordHash: hashPassword(generatedPassword),
+          passwordHash: hashPassword(password),
           fullName: typeof fullName === "string" && fullName.trim() ? fullName.trim() : businessName.trim(),
           role: "customer",
           phone: phone?.trim() || null,
@@ -136,15 +137,6 @@ export async function POST(request: Request) {
           assignedAgentId: assignedAgent.id,
         })
         .returning();
-
-      await tx.insert(stores).values({
-        customerId: newCustomer.id,
-        storeName: (storeName || businessName).trim(),
-        storeUrl: storeUrl?.trim() || null,
-        platform: "Shopify",
-        niche: storeCategory || "Retail",
-        isPrimary: true,
-      });
 
       await tx.insert(consentRecords).values({
         userId: newUser.id,
@@ -216,7 +208,6 @@ export async function POST(request: Request) {
       ticketCode: result.newTicket.ticketCode,
       conversationId: result.conversation.id,
       assignedAgentCode: assignedAgent.agentCode,
-      generatedPassword,
       user: {
         id: result.newUser.id,
         email: result.newUser.email,
