@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Lock, Mail, Store } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Lock, Mail, Store } from "lucide-react";
 import { ShopifyLogoMark } from "@/components/shared/ShopifyLogoMark";
 
 export default function CustomerStartPage() {
@@ -11,6 +11,7 @@ export default function CustomerStartPage() {
   const [activeTab, setActiveTab] = useState<"onboarding" | "login">("onboarding");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [businessName, setBusinessName] = useState("");
   const [ticketChoice, setTicketChoice] = useState<"existing" | "none" | null>(null);
   const [ticketNumber, setTicketNumber] = useState("");
@@ -19,6 +20,7 @@ export default function CustomerStartPage() {
   const [created, setCreated] = useState<{ conversationId: string } | null>(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -97,7 +99,7 @@ export default function CustomerStartPage() {
               <div><h2 className="text-xl font-bold">Merchant Account Login</h2><p className="mt-1 text-sm text-[#6d7175]">Use the email and password from your account setup.</p></div>
               {loginError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{loginError}</p>}
               <label className="block text-sm font-semibold">Email Address<div className="relative mt-1"><Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="email" required value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="w-full rounded-lg border border-[#e1e3e5] py-2 pl-9 pr-3" autoComplete="email"/></div></label>
-              <label className="block text-sm font-semibold">Password<div className="relative mt-1"><Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full rounded-lg border border-[#e1e3e5] py-2 pl-9 pr-3" autoComplete="current-password"/></div></label>
+              <label className="block text-sm font-semibold">Password<div className="relative mt-1"><Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type={showLoginPassword ? "text" : "password"} required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full rounded-lg border border-[#e1e3e5] py-2 pl-9 pr-11" autoComplete="current-password"/><button type="button" onClick={() => setShowLoginPassword((shown) => !shown)} aria-label={showLoginPassword ? "Hide password" : "Show password"} aria-pressed={showLoginPassword} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:text-gray-800"><span className="sr-only">{showLoginPassword ? "Hide password" : "Show password"}</span>{showLoginPassword ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}</button></div></label>
               <button disabled={loginLoading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#008060] py-3 text-sm font-semibold text-white disabled:opacity-60">{loginLoading ? "Signing in…" : "Sign in"}<ArrowRight className="h-4 w-4"/></button>
             </form>
           ) : created ? (
@@ -110,7 +112,7 @@ export default function CustomerStartPage() {
               <div><h2 className="text-xl font-bold">Create your support account</h2><p className="mt-1 text-sm text-[#6d7175]">Just the details we need to get you to the right support agent.</p></div>
               {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
               <label className="block text-sm font-semibold">Email address<div className="relative mt-1"><Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@business.com" autoComplete="email" className="w-full rounded-lg border border-[#e1e3e5] py-2.5 pl-9 pr-3"/></div></label>
-              <label className="block text-sm font-semibold">Password<div className="relative mt-1"><Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" className="w-full rounded-lg border border-[#e1e3e5] py-2.5 pl-9 pr-3"/></div></label>
+              <label className="block text-sm font-semibold">Password<div className="relative mt-1"><Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type={showPassword ? "text" : "password"} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" className="w-full rounded-lg border border-[#e1e3e5] py-2.5 pl-9 pr-11"/><button type="button" onClick={() => setShowPassword((shown) => !shown)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:text-gray-800"><span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>{showPassword ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}</button></div></label>
               <label className="block text-sm font-semibold">Business name<div className="relative mt-1"><Store className="absolute left-3 top-3 h-4 w-4 text-gray-400"/><input type="text" required maxLength={160} value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Your business" autoComplete="organization" className="w-full rounded-lg border border-[#e1e3e5] py-2.5 pl-9 pr-3"/></div></label>
               <fieldset className="space-y-2"><legend className="mb-2 text-sm font-semibold">Do you already have a support ticket ID?</legend><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e1e3e5] p-3 text-sm"><input type="radio" name="ticketChoice" checked={ticketChoice === "existing"} onChange={() => setTicketChoice("existing")}/>Yes, I have a ticket ID</label><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e1e3e5] p-3 text-sm"><input type="radio" name="ticketChoice" checked={ticketChoice === "none"} onChange={() => setTicketChoice("none")}/>I don’t have one</label></fieldset>
               {ticketChoice === "existing" && <label className="block text-sm font-semibold">Existing ticket ID<input type="text" required maxLength={64} value={ticketNumber} onChange={(e) => setTicketNumber(e.target.value)} placeholder="Ticket ID" className="mt-1 w-full rounded-lg border border-[#e1e3e5] px-3 py-2.5"/></label>}
