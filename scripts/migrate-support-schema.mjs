@@ -8,6 +8,7 @@ await client.connect();
 
 try {
   await client.query("BEGIN");
+  await client.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_ticket_reference TEXT`);
   await client.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS service_request_id UUID REFERENCES service_requests(id) ON DELETE SET NULL`);
   await client.query(`ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_data BYTEA`);
   await client.query(`
