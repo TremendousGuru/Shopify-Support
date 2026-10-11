@@ -17,6 +17,8 @@ import {
   Globe,
   HelpCircle,
   Sparkles,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { ShopifyLogoMark } from "@/components/shared/ShopifyLogoMark";
 
@@ -58,6 +60,8 @@ export default function CustomerStartPage() {
   // Login form state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -92,12 +96,12 @@ export default function CustomerStartPage() {
 
   const handleNextStep = () => {
     setError(null);
-    if (!formData.email || !formData.email.includes("@")) {
-      setError("Please enter a valid business email address.");
+    if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      setError("Enter a valid email address.");
       return;
     }
-    if (!formData.password || formData.password.length < 8) {
-      setError("Please choose a password with at least 8 characters.");
+    if (formData.password.length < 8) {
+      setError("Choose a password with at least 8 characters.");
       return;
     }
     setStep(2);
@@ -303,13 +307,17 @@ export default function CustomerStartPage() {
                 <div className="relative">
                   <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
                   <input
-                    type="password"
+                    type={showLoginPassword ? "text" : "password"}
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     required
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-[#e1e3e5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#008060] focus:border-transparent bg-white"
+                    autoComplete="current-password"
+                    className="w-full pl-9 pr-10 py-2 text-sm border border-[#e1e3e5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#008060] focus:border-transparent bg-white"
                     placeholder="••••••••"
                   />
+                  <button type="button" onClick={() => setShowLoginPassword((visible) => !visible)} aria-label={showLoginPassword ? "Hide password" : "Show password"} aria-pressed={showLoginPassword} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800">
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -377,12 +385,16 @@ export default function CustomerStartPage() {
                   <div className="relative">
                     <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
                     <input
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      autoComplete="new-password"
                       placeholder="At least 8 characters"
-                      className="w-full pl-9 pr-3 py-2 text-sm border border-[#e1e3e5] rounded-lg focus:ring-2 focus:ring-[#008060]"
+                      className="w-full pl-9 pr-10 py-2 text-sm border border-[#e1e3e5] rounded-lg focus:ring-2 focus:ring-[#008060]"
                     />
+                    <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800">
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
 

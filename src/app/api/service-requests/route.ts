@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { serviceRequests, services, customers, agents, users, conversations, serviceOrders } from "@/db/schema";
+import { serviceRequests, services, customers, agents, users, conversations, messages, serviceOrders } from "@/db/schema";
 import { and, eq, desc, gt } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { sendNotification } from "@/lib/notifications";

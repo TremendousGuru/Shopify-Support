@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Mail,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { ShopifyLogoMark } from "@/components/shared/ShopifyLogoMark";
 
@@ -32,6 +34,7 @@ function AgentStartContent() {
   // Agent form
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [specialties, setSpecialties] = useState("Shopify Themes, Liquid 2.0, CRO, SEO");
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -40,6 +43,7 @@ function AgentStartContent() {
   // Agent login state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -230,13 +234,17 @@ function AgentStartContent() {
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                   <input
-                    type="password"
+                    type={showLoginPassword ? "text" : "password"}
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     required
-                    className="w-full pl-9 pr-3 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoComplete="current-password"
+                    className="w-full pl-9 pr-10 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="••••••••"
                   />
+                  <button type="button" onClick={() => setShowLoginPassword((visible) => !visible)} aria-label={showLoginPassword ? "Hide password" : "Show password"} aria-pressed={showLoginPassword} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -336,14 +344,20 @@ function AgentStartContent() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Create Agent Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Minimum 8 characters"
-                    className="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="new-password"
+                      placeholder="Minimum 8 characters"
+                      className="w-full px-3 pr-10 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div>

@@ -8,6 +8,7 @@ await client.connect();
 
 try {
   await client.query("BEGIN");
+  await client.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_ticket_reference TEXT`);
   await client.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS service_request_id UUID REFERENCES service_requests(id) ON DELETE SET NULL`);
   await client.query(`ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_data BYTEA`);
   await client.query(`
@@ -49,6 +50,16 @@ try {
       updated_at TIMESTAMP NOT NULL DEFAULT now()
     )
   `);
+  await client.query(`ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS quote_billing_interval TEXT`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS amount_paid INTEGER NOT NULL DEFAULT 0`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS payment_reported_amount INTEGER`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS delivery_due_at TIMESTAMP`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS completion_file_id UUID`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS customer_review_note TEXT`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS customer_satisfied_at TIMESTAMP`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS recurring_interval TEXT`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS next_payment_due_at TIMESTAMP`);
+  await client.query(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS last_recurring_reminder_at TIMESTAMP`);
   await client.query("COMMIT");
   console.log("Support schema is ready (message links, file byte storage, service proposals, and service orders).");
 } catch (error) {
