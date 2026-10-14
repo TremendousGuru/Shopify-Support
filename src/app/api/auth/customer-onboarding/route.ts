@@ -24,13 +24,15 @@ export async function ensureRequiredTablesExist() {
 
   for (const table of requiredTables) {
     try {
-      // Use a count query against the table. If the table does not exist,
-      // the query will throw and we record the missing table.
-      const count = await db.execute(
+      // Check if the table exists and has rows using a raw query.
+      // We use `as any` to bypass the type mismatch between
+      // QueryResult<string> and the expected row structure.
+      const result = await db.execute(
         `SELECT COUNT(*)::INT AS count FROM "${table}"`
-      );
-      const countValue = (count as unknown as { row: { count: number } }).row?.count;
-      if (countValue === undefined || countValue === 0) {
+      ) as any;
+      // Extract the count value from the first row.
+      const countValue = result.rows?.[0]?.count ?? 0;
+      if (countValue === 0) {
         missingTables.push(table);
       }
     } catch {
