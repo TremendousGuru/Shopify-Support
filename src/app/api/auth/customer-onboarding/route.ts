@@ -15,9 +15,46 @@ import { randomInt } from "node:crypto";
 import { hashPassword, generateCustomerCode, createSession } from "@/lib/auth";
 import { verifyAgentSignupToken } from "@/lib/agent-links";
 import { sendNotification } from "@/lib/notifications";
+// Check that all required tables exist in the database. If a table is
+// missing (e.g. the deployed DB was initialized with an older schema), throw
+// a clear, actionable error instead of a cryptic Postgres "Failed query".
+// Check that all required tables exist in the database. If a table is
+// missing (e.g. the deployed DB was initialized with an older schema), throw
+// a clear, actionable error instead of a cryptic Postgres "Failed query".
+export async function ensureRequiredTablesExist() {
+  const requiredTables = ["users", "customers", "stores", "agents", "tickets", "conversations", "messages", "serviceRequests"];
+  const missingTables: string[] = [];
+
+  for (const table of requiredTables) {
+    try {
+      // Use a count query against the table. If the table does not exist,
+      // the query will throw and we record the missing table.
+      const count = await db.execute(
+        `SELECT COUNT(*)::INT AS count FROM "${table}"`
+      );
+      const countValue = (count as unknown as { row: { count: number } }).row?.count;
+      if (countValue === undefined || countValue === 0) {
+        missingTables.push(table);
+      }
+    } catch {
+      missingTables.push(table);
+    }
+  }
+
+  if (missingTables.length > 0) {
+    throw new Error(
+      `Database schema is incomplete. Missing tables: ${missingTables.join(", ")}. ` +
+      "Please run the database setup: see README.md for instructions on applying the schema (drizzle-kit push or npm run db:push)."
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {
+    // Ensure the deployed database schema matches this codebase before
+    // attempting any writes. This catches the "Failed query: insert into
+    // stores..." error when the database hasn't been initialized/pushed.
+    await ensureRequiredTablesExist();
     const body = await request.json();
     const {
       email,
@@ -149,13 +186,19 @@ export async function POST(request: Request) {
         })
         .returning();
 
+      // Insert store record explicitly. We specify columns so the query
+      // matches the database schema exactly (avoids the "insert into stores
+      // ... values (default, $1, $2, ...)" failure when the deployed DB is
+      // missing or differs from the local schema).
       await tx.insert(stores).values({
         customerId: newCustomer.id,
         storeName: (storeName || businessName).trim(),
         storeUrl: storeUrl?.trim() || null,
         platform: "Shopify",
         niche: storeCategory || "Retail",
+        approxMonthlyOrders: null,
         isPrimary: true,
+        createdAt: new Date(),
       });
 
       await tx.insert(consentRecords).values({
@@ -238,6 +281,19 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error("Customer onboarding error:", error);
+
+    // If the database schema is missing tables, give the user a clear,
+    // actionable message instead of the raw Postgres "Failed query".
+    if (error.message?.includes("Database schema is incomplete")) {
+      return NextResponse.json(
+        {
+          error: "Database setup is incomplete. Please run the database setup so the tables exist.",
+          details: process.env.NODE_ENV === "development" ? error.message : undefined,
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({ error: error.message || "Failed to complete onboarding" }, { status: 500 });
   }
 }
