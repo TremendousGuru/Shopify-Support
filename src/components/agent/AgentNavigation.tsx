@@ -146,7 +146,7 @@ export function AgentNavigation({ user }: AgentNavProps) {
 
       {/* Mobile Bottom Navigation for Agents */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-40 safe-bottom text-slate-300">
-        <div className="flex items-center justify-around py-2">
+        <div className="grid grid-cols-7 items-center py-2">
           <Link
             href="/agent"
             className={`flex flex-col items-center gap-0.5 text-[10px] font-medium ${
@@ -191,6 +191,19 @@ export function AgentNavigation({ user }: AgentNavProps) {
           >
             <ClipboardList className="w-5 h-5" />
             <span>Services</span>
+          </Link>
+          <Link
+            href="/agent/notifications"
+            aria-label={`Notifications${user.unreadNotificationsCount ? `, ${user.unreadNotificationsCount} unread` : ""}`}
+            className={`relative flex min-w-0 flex-col items-center gap-0.5 text-[9px] font-medium ${
+              pathname.startsWith("/agent/notifications") ? "text-blue-400" : "text-slate-400"
+            }`}
+          >
+            <span className="relative">
+              <Bell className="h-5 w-5" />
+              {!!user.unreadNotificationsCount && user.unreadNotificationsCount > 0 && <span className="absolute -right-2 -top-1 min-w-4 rounded-full bg-red-500 px-1 text-center text-[9px] leading-4 text-white">{user.unreadNotificationsCount > 9 ? "9+" : user.unreadNotificationsCount}</span>}
+            </span>
+            <span>Alerts</span>
           </Link>
           <Link
             href="/agent/profile"

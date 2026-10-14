@@ -313,6 +313,9 @@ export default function CustomerMessagesPage() {
                 Specialist {activeConv?.assignedAgent?.fullName || "assigned to your account"}
                 {activeConv?.assignedAgent?.department ? ` (${activeConv.assignedAgent.department})` : null}
               </div>
+              {!!activeConv?.assignedAgent?.specialties && <div className="mt-1 max-w-[60vw] truncate text-[10px] text-gray-500 sm:max-w-md" title={activeConv.assignedAgent.specialties}>
+                Specialities: {activeConv.assignedAgent.specialties}
+              </div>}
             </div>
           </div>
 

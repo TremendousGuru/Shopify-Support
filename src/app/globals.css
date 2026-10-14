@@ -23,6 +23,16 @@
   }
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 .home-grid {
   background-image: linear-gradient(rgba(31, 67, 47, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(31, 67, 47, 0.045) 1px, transparent 1px);

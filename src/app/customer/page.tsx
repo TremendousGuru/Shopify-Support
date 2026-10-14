@@ -71,6 +71,7 @@ export default async function CustomerDashboardPage() {
       assignedAgentUser = {
         agentCode: agentRec.agentCode,
         department: agentRec.department,
+        specialties: agentRec.specialties?.split(",").map((item) => item.trim()).filter(Boolean) ?? [],
         status: agentRec.status,
         fullName: u?.fullName || "Support Specialist",
         avatarUrl: u?.avatarUrl,
@@ -115,11 +116,11 @@ export default async function CustomerDashboardPage() {
         {/* Assigned Agent quick card */}
         <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3.5 min-w-[240px] shrink-0">
           <div className="text-[11px] text-emerald-200 font-semibold uppercase tracking-wider flex items-center justify-between">
-            <span>Assigned Architect</span>
-            <span className="flex items-center gap-1 text-emerald-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Available
-            </span>
+            <span>Assigned Specialist</span>
+            {assignedAgentUser && <span className="flex items-center gap-1 text-emerald-300">
+              <span className={`w-2 h-2 rounded-full ${assignedAgentUser.status === "Available" ? "bg-emerald-400 animate-pulse" : "bg-amber-300"}`} />
+              {assignedAgentUser.status}
+            </span>}
           </div>
 
           <div className="flex items-center gap-2.5 mt-2">
@@ -128,13 +129,21 @@ export default async function CustomerDashboardPage() {
             </div>
             <div>
               <div className="text-xs font-bold text-white">
-                {assignedAgentUser?.fullName || "Sarah Jenkins"}
+                {assignedAgentUser?.fullName || "No agent assigned yet"}
               </div>
               <div className="text-[11px] text-emerald-100">
-                {assignedAgentUser?.agentCode || "SHOP-AGENT-001"}
+                {assignedAgentUser?.agentCode || "Your support team will be shown here"}
               </div>
             </div>
           </div>
+
+          {assignedAgentUser?.department && <div className="mt-3 text-[11px] text-emerald-100">{assignedAgentUser.department}</div>}
+          {assignedAgentUser && <div className="mt-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200">Specialities</div>
+            {assignedAgentUser.specialties.length ? <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {assignedAgentUser.specialties.map((specialty) => <span key={specialty} className="rounded-full bg-white/15 px-2 py-1 text-[10px] text-white">{specialty}</span>)}
+            </div> : <div className="mt-1 text-[10px] text-emerald-100">Specialities not listed yet</div>}
+          </div>}
 
           <Link
             href="/customer/messages"

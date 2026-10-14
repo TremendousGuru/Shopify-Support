@@ -70,7 +70,7 @@ export async function GET(request: Request) {
 
         const [assignedAgent] = conv.assignedAgentId
           ? await db
-              .select({ fullName: users.fullName, department: agents.department })
+              .select({ fullName: users.fullName, department: agents.department, specialties: agents.specialties })
               .from(agents)
               .innerJoin(users, eq(users.id, agents.userId))
               .where(eq(agents.id, conv.assignedAgentId))
