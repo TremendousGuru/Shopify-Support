@@ -187,10 +187,15 @@ export async function POST(request: Request) {
       // matches the database schema exactly (avoids the "insert into stores
       // ... values (default, $1, $2, ...)" failure when the deployed DB is
       // missing or differs from the local schema).
+      // Insert store record explicitly. We specify columns so the query
+      // matches the database schema exactly (avoids the "Failed query: insert
+      // into stores" error when the deployed DB is missing or differs from the
+      // local schema). The deployed Supabase DB has `store_url` as NOT NULL,
+      // so we provide a fallback URL instead of passing null.
       await tx.insert(stores).values({
         customerId: newCustomer.id,
         storeName: (storeName || businessName).trim(),
-        storeUrl: storeUrl?.trim() || null,
+        storeUrl: storeUrl?.trim() || websiteUrl?.trim() || "",
         platform: "Shopify",
         niche: storeCategory || "Retail",
         approxMonthlyOrders: null,
