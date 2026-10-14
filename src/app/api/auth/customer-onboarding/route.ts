@@ -18,9 +18,6 @@ import { sendNotification } from "@/lib/notifications";
 // Check that all required tables exist in the database. If a table is
 // missing (e.g. the deployed DB was initialized with an older schema), throw
 // a clear, actionable error instead of a cryptic Postgres "Failed query".
-// Check that all required tables exist in the database. If a table is
-// missing (e.g. the deployed DB was initialized with an older schema), throw
-// a clear, actionable error instead of a cryptic Postgres "Failed query".
 export async function ensureRequiredTablesExist() {
   const requiredTables = ["users", "customers", "stores", "agents", "tickets", "conversations", "messages", "serviceRequests"];
   const missingTables: string[] = [];
