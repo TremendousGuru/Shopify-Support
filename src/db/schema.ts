@@ -42,7 +42,7 @@ export const stores = pgTable("stores", {
   id: uuid("id").primaryKey().defaultRandom(),
   customerId: uuid("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
   storeName: text("store_name").notNull(),
-  storeUrl: text("store_url"),
+  storeUrl: text("store_url").notNull(),
   platform: text("platform").notNull().default("Shopify"),
   niche: text("niche"),
   approxMonthlyOrders: text("approx_monthly_orders"),

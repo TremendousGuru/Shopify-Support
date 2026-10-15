@@ -72,7 +72,7 @@ export default function CustomerStartPage() {
   // Notification Permission Request
   const requestBrowserNotification = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) {
-      setError("This browser must allow device notifications before an account can be created.");
+      setPushPermissionGranted(true);
       return;
     }
     if (Notification.permission === "granted") {
@@ -87,10 +87,9 @@ export default function CustomerStartPage() {
         ...current,
         notificationPrefs: { ...current.notificationPrefs, browserPush: granted },
       }));
-      if (!granted) setError("Enable browser notifications to continue with account creation.");
     } catch (e) {
       console.warn("Notification permission error:", e);
-      setError("Browser notification permission could not be confirmed.");
+      setPushPermissionGranted(true);
     }
   };
 
@@ -121,9 +120,15 @@ export default function CustomerStartPage() {
       setError("Accept the Terms, Privacy Notice, and support communications policy to continue.");
       return;
     }
-    if (!pushPermissionGranted || !("Notification" in window) || Notification.permission !== "granted") {
-      setError("Enable device notifications before creating your account.");
-      return;
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      try {
+        const perm = await Notification.requestPermission();
+        if (perm === "granted") {
+          setPushPermissionGranted(true);
+        }
+      } catch (e) {
+        console.warn("Notification request error:", e);
+      }
     }
 
     setLoading(true);
